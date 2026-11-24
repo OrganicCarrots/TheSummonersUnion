@@ -405,6 +405,36 @@ test("the minimap button shows, hides, drags and clicks", function()
     ok(tip:find("Flagged by other members: 1 player, 0 guilds", 1, true), "tooltip counts other members' flags")
 end)
 
+test("the list window's All tab shows your flags and community reports together", function()
+    ns.FlagPlayer("badlead-whitemane", { name = "Badlead-Whitemane", kind = "kick" }, true)
+    ns.FlagGuild("bad guild@whitemane", { name = "Bad Guild", kind = "kick" }, true)
+    ns.db.community.players["grief-whitemane"] = { ["guildie-whitemane"] = { d = ns.Today(), n = "Grief-Whitemane", via = "GUILD" } }
+    if not ns.ListWindow() then ns.ToggleWindow() end
+    local frame, rows, tabs = ns.ListWindow()
+    if not frame:IsShown() then frame:Show() end
+
+    local function shownRows()
+        local out = {}
+        for _, row in ipairs(rows) do if row.shown then out[row.name.text] = row end end
+        return out
+    end
+    tabs.all.scripts.OnClick(tabs.all)
+    local all = shownRows()
+    ok(all["Badlead-Whitemane"] and all["<Bad Guild>"] and all["Grief-Whitemane"], "player, guild and community rows")
+    ok(all["Badlead-Whitemane"].remove.shown, "your flags can be removed")
+    ok(not all["Grief-Whitemane"].remove.shown, "community reports can't")
+
+    all["Badlead-Whitemane"].remove.scripts.OnClick(all["Badlead-Whitemane"].remove)
+    eq(ns.db.players["badlead-whitemane"], nil, "remove works from the All tab")
+    all = shownRows()
+    ok(all["<Bad Guild>"] and all["Grief-Whitemane"] and not all["Badlead-Whitemane"], "row gone after removing")
+
+    tabs.players.scripts.OnClick(tabs.players)
+    eq(next(shownRows()), nil, "players tab is empty now")
+    tabs.guilds.scripts.OnClick(tabs.guilds)
+    ok(shownRows()["<Bad Guild>"], "guilds tab still has the guild")
+end)
+
 test("the addon compartment entry opens the list and options", function()
     SummonersUnion_OnAddonCompartmentClick("TheSummonersUnion", "RightButton")
     eq(M.openedCategory, 4242, "right-click, older clients")

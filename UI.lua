@@ -65,29 +65,32 @@ end
 
 -- list window
 local ROWS, ROW_H = 14, 20
-local frame, rows, tab, items, offset = nil, {}, "players", {}, 0
+local frame, rows, tabButtons, tab, items, offset = nil, {}, {}, "all", {}, 0
 
 local function collect()
     local out = {}
-    if tab == "community" then
+    if tab == "all" or tab == "community" then
         for _, bucket in ipairs({ "players", "guilds" }) do
             for key in pairs(ns.db.community[bucket]) do
                 local n, shown, latest, total = ns.Community(bucket, key)
                 if n > 0 then
-                    out[#out + 1] = { key = key, bucket = bucket, n = n, total = total, shown = shown, latest = latest or {},
-                                      when = ((latest and latest.d) or 0) * 86400 }
+                    out[#out + 1] = { list = "community", key = key, bucket = bucket, n = n, total = total, shown = shown,
+                                      latest = latest or {}, when = ((latest and latest.d) or 0) * 86400 }
                 end
             end
         end
-    else
-        for key, rec in pairs(ns.db[tab]) do out[#out + 1] = { key = key, rec = rec, when = rec.when or 0 } end
+    end
+    for _, list in ipairs({ "players", "guilds" }) do
+        if tab == "all" or tab == list then
+            for key, rec in pairs(ns.db[list]) do out[#out + 1] = { list = list, key = key, rec = rec, when = rec.when or 0 } end
+        end
     end
     table.sort(out, function(a, b) return a.when > b.when end)
     return out
 end
 
 local function rowText(it)
-    if tab == "community" then
+    if it.list == "community" then
         local l = it.latest
         local name = (it.bucket == "guilds" and ("<" .. (l.n or it.key) .. ">")) or (l.n or it.key)
         if it.bucket == "players" and l.gn then name = name .. " |cffaaaaaa<" .. l.gn .. ">|r" end
@@ -96,7 +99,7 @@ local function rowText(it)
     end
     local r = it.rec
     local name = r.name or it.key
-    if tab == "guilds" then name = "<" .. name .. ">" elseif r.guild then name = name .. " |cffaaaaaa<" .. r.guild .. ">|r" end
+    if it.list == "guilds" then name = "<" .. name .. ">" elseif r.guild then name = name .. " |cffaaaaaa<" .. r.guild .. ">|r" end
     local what = ns.REASONS[r.kind] or r.kind or ""
     if (r.summons or 0) > 0 then what = what .. ", " .. r.summons .. " summons" end
     if (r.times or 1) > 1 then what = what .. ", x" .. r.times end
@@ -117,7 +120,7 @@ local function refresh()
             row.name:SetText(a)
             row.what:SetText(b)
             row.date:SetText(c)
-            if tab == "community" then row.remove:Hide() else row.remove:Show() end
+            if it.list == "community" then row.remove:Hide() else row.remove:Show() end
             row:Show()
         else
             row:Hide()
@@ -160,13 +163,14 @@ local function build()
     title:SetPoint("TOP", 0, -6)
     title:SetText(ns.TITLE)
 
-    local tabs = { { "players", "Players" }, { "guilds", "Guilds" }, { "community", "Community" } }
+    local tabs = { { "all", "All" }, { "players", "Players" }, { "guilds", "Guilds" }, { "community", "Community" } }
     for i, t in ipairs(tabs) do
         local b = button(frame, t[2], 100, function()
             tab, offset = t[1], 0
             refresh()
         end)
         b:SetPoint("TOPLEFT", 14 + (i - 1) * 104, -30)
+        tabButtons[t[1]] = b
     end
 
     frame:EnableMouseWheel(true)
@@ -200,7 +204,7 @@ local function build()
         row.remove:SetScript("OnClick", function()
             local it = row.item
             if not it then return end
-            if tab == "players" then ns.UnflagPlayer(it.key) elseif tab == "guilds" then ns.UnflagGuild(it.key) end
+            if it.list == "players" then ns.UnflagPlayer(it.key) elseif it.list == "guilds" then ns.UnflagGuild(it.key) end
         end)
         rows[i] = row
     end
@@ -221,6 +225,9 @@ function ns.ToggleWindow()
     if not frame then build() end
     if frame:IsShown() then frame:Hide() else frame:Show() end
 end
+
+-- used by the tests
+function ns.ListWindow() return frame, rows, tabButtons end
 
 -- export / import box
 local box
