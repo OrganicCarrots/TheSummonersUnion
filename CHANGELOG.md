@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.1.0
+
+- Warnings say how many times a player or guild has been flagged and by how many members
+- Users swap their whole lists when they meet (guild at login, groups when you join, the
+  union channel), including reports passed on from others, so lists fill in on their own
+- Your flags are only shared if you've grouped with them in the last 7 days, otherwise
+  they stay private
+- Anyone filing more than 10 new reports in a day gets ignored automatically (`/su trust`
+  to undo)
+- Everything one person passes on counts once toward the warning threshold, and they can
+  pass on at most 3 reports about the same player
+- Withdrawn flags spread to everyone and stay withdrawn
+- `/su set relays off` ignores passed-on reports
+- Don't answer list requests on a scope you've turned sharing off for
+- 1.0 ignores passed-on reports and the new count field, so mixed versions still work
+
 ## v1.0.0
 
 - Options panel (Options > AddOns, or `/su options`)

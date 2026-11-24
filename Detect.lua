@@ -41,6 +41,7 @@ local function scanRoster()
         local key, display = ns.UnitKey(unit)
         if key then
             local gkey, gname = ns.UnitGuild(unit)
+            if key ~= ns.playerKey then ns.NoteGrouped(key, gkey) end
             local m = session.members[key] or {}
             m.name, m.guildKey, m.guild = display, gkey or m.guildKey, gname or m.guild
             session.members[key] = m

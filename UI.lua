@@ -51,9 +51,9 @@ local function collect()
     if tab == "community" then
         for _, bucket in ipairs({ "players", "guilds" }) do
             for key in pairs(ns.db.community[bucket]) do
-                local n, shown, latest = ns.Community(bucket, key)
+                local n, shown, latest, total = ns.Community(bucket, key)
                 if n > 0 then
-                    out[#out + 1] = { key = key, bucket = bucket, n = n, shown = shown, latest = latest or {},
+                    out[#out + 1] = { key = key, bucket = bucket, n = n, total = total, shown = shown, latest = latest or {},
                                       when = ((latest and latest.d) or 0) * 86400 }
                 end
             end
@@ -71,7 +71,7 @@ local function rowText(it)
         local name = (it.bucket == "guilds" and ("<" .. (l.n or it.key) .. ">")) or (l.n or it.key)
         if it.bucket == "players" and l.gn then name = name .. " |cffaaaaaa<" .. l.gn .. ">|r" end
         local state = it.shown and "|cffff5050warning|r" or "|cff999999below threshold|r"
-        return name, ("%d report%s, %s"):format(it.n, it.n == 1 and "" or "s", state), ns.DayText(l.d)
+        return name, ("%dx by %s, %s"):format(it.total or it.n, ns.Plural(it.n, "member"), state), ns.DayText(l.d)
     end
     local r = it.rec
     local name = r.name or it.key
@@ -80,6 +80,7 @@ local function rowText(it)
     if (r.summons or 0) > 0 then what = what .. ", " .. r.summons .. " summons" end
     if (r.times or 1) > 1 then what = what .. ", x" .. r.times end
     if r.source == "import" then what = what .. " (imported)" end
+    if r.private then what = what .. " (private)" end
     return name, what, ns.TimeText(r.when)
 end
 

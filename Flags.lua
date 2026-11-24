@@ -16,6 +16,7 @@ local function upsert(store, key, rec)
         for _, f in ipairs({ "name", "guild", "guildKey", "zone", "kind", "reason", "note", "source" }) do
             if rec[f] ~= nil and rec[f] ~= "" then old[f] = rec[f] end
         end
+        old.private = (old.private and rec.private) or nil -- once shared, stays shared
         return old
     end
     rec.times = 1
@@ -24,23 +25,45 @@ local function upsert(store, key, rec)
     return rec
 end
 
+-- who we've actually been in a group with, so flags can't be shared about random people
+function ns.NoteGrouped(key, guildKey)
+    local now = time()
+    if key then ns.db.seen[key] = now end
+    if guildKey then ns.db.seenGuilds[guildKey] = now end
+end
+
+function ns.GroupedRecently(key, isGuild)
+    local t = key and (isGuild and ns.db.seenGuilds or ns.db.seen)[key]
+    return t ~= nil and time() - t <= ns.LIMITS.groupedDays * 86400
+end
+
+local PRIVATE_NOTE = " Only you will see it: you haven't been in a group with %s in the last %d days, so it isn't shared."
+
 function ns.FlagPlayer(key, rec, quiet)
     if not key then return end
+    if rec.source == "you" then rec.private = not ns.GroupedRecently(key) or nil end
     local r = upsert(ns.db.players, key, rec)
     ns.Fire("FLAGS_CHANGED")
     if rec.source == "you" then ns.Fire("FLAG_ADDED", "P", key, r) end
     if not quiet then
-        ns.Print(("Flagged %s%s."):format(r.name or key, r.guild and (" <" .. r.guild .. ">") or ""))
+        local msg = ("Flagged %s%s."):format(r.name or key, r.guild and (" <" .. r.guild .. ">") or "")
+        if r.private then msg = msg .. PRIVATE_NOTE:format("them", ns.LIMITS.groupedDays) end
+        ns.Print(msg)
     end
     return r
 end
 
 function ns.FlagGuild(key, rec, quiet)
     if not key then return end
+    if rec.source == "you" then rec.private = not ns.GroupedRecently(key, true) or nil end
     local r = upsert(ns.db.guilds, key, rec)
     ns.Fire("FLAGS_CHANGED")
     if rec.source == "you" then ns.Fire("FLAG_ADDED", "G", key, r) end
-    if not quiet then ns.Print(("Flagged guild <%s>."):format(r.name or key)) end
+    if not quiet then
+        local msg = ("Flagged guild <%s>."):format(r.name or key)
+        if r.private then msg = msg .. PRIVATE_NOTE:format("a member", ns.LIMITS.groupedDays) end
+        ns.Print(msg)
+    end
     return r
 end
 
@@ -61,28 +84,44 @@ function ns.ReportExpired(day)
     return days > 0 and (tonumber(day) or 0) < ns.Today() - days
 end
 
--- returns: number of (trusted) reporters, whether that's enough to show, newest report
+function ns.ReportUsable(reporter, r)
+    local db = ns.db
+    if db.distrust[reporter] or ns.ReportExpired(r.d) then return false end
+    if r.rl and (not db.settings.acceptRelays or db.distrust[r.rl]) then return false end
+    return true
+end
+
+-- returns: members who reported it, whether that's enough to warn, newest report,
+-- total grievances, and how many of the reports were relayed.
+-- the threshold counts sources, not reports: everything one person relays counts once,
+-- so making up reporters can't push anyone over it
 function ns.Community(bucket, key)
     local reports = key and ns.db.community[bucket][key]
-    local n, trusted, latest = 0, false, nil
+    local n, total, relayed, trusted, latest = 0, 0, 0, false, nil
+    local sources, nSources = {}, 0
     if reports then
+        local cap = ns.LIMITS.countCap
         for reporter, r in pairs(reports) do
-            if not ns.db.distrust[reporter] and not ns.ReportExpired(r.d) then
+            if ns.ReportUsable(reporter, r) then
                 n = n + 1
-                if r.via == "GUILD" and ns.db.settings.trustGuildmates then trusted = true end
+                total = total + math.min(r.c or 1, cap)
+                if r.rl then relayed = relayed + 1 end
+                local src = r.rl or reporter
+                if not sources[src] then sources[src], nSources = true, nSources + 1 end
+                if r.via == "GUILD" and not r.rl and ns.db.settings.trustGuildmates then trusted = true end
                 if not latest or (r.d or 0) > (latest.d or 0) then latest = r end
             end
         end
     end
-    local shown = n > 0 and (n >= ns.db.settings.communityThreshold or trusted)
-    return n, shown, latest
+    local shown = n > 0 and (nSources >= ns.db.settings.communityThreshold or trusted)
+    return n, shown, latest, total, relayed
 end
 
 function ns.Status(playerKey, guildKey)
     local s = {}
     if playerKey then
         s.player = ns.db.players[playerKey]
-        s.cPlayer, s.cPlayerShown, s.cPlayerLatest = ns.Community("players", playerKey)
+        s.cPlayer, s.cPlayerShown, s.cPlayerLatest, s.cPlayerTotal, s.cPlayerRelayed = ns.Community("players", playerKey)
         if not guildKey then
             -- no guild info before you're grouped (invites), use the last one we saw
             guildKey = (s.player and s.player.guildKey) or (s.cPlayerLatest and s.cPlayerLatest.g) or nil
@@ -91,22 +130,45 @@ function ns.Status(playerKey, guildKey)
     if guildKey then
         s.guildKey = guildKey
         s.guild = ns.db.guilds[guildKey]
-        s.cGuild, s.cGuildShown = ns.Community("guilds", guildKey)
+        s.cGuild, s.cGuildShown, s.cGuildLatest, s.cGuildTotal = ns.Community("guilds", guildKey)
     end
     s.flagged = (s.player or s.guild or s.cPlayerShown or s.cGuildShown) and true or false
     return s
 end
 
+local function plural(n, word) return n .. " " .. word .. (n == 1 and "" or "s") end
+ns.Plural = plural
+
+-- "flagged 6 times by 4 union members, including you"
+local function tally(total, members, mine)
+    local by = plural(members, "union member") .. (mine and ", including you" or "")
+    if mine and members == 1 then by = "you" end
+    return ("flagged %s by %s"):format(plural(total, "time"), by)
+end
+
+local function yours(p)
+    local times = p.times or 1
+    return ("you flagged them %s (%s%s)"):format(
+        times > 1 and (times .. " times, last on " .. ns.TimeText(p.when)) or ("on " .. ns.TimeText(p.when)),
+        ns.REASONS[p.kind] or p.kind or "flagged", (p.summons or 0) > 0 and (", " .. p.summons .. " summons") or "")
+end
+
 function ns.Describe(s)
-    local parts = {}
-    if s.player then
-        local p = s.player
-        parts[#parts + 1] = ("you flagged them %s (%s%s)"):format(ns.TimeText(p.when), ns.REASONS[p.kind] or p.kind or "flagged",
-            (p.summons or 0) > 0 and (", " .. p.summons .. " summons") or "")
+    local parts, cap = {}, ns.LIMITS.countCap
+    local p, g = s.player, s.guild
+    if s.cPlayerShown then
+        local total, members = s.cPlayerTotal or s.cPlayer, s.cPlayer
+        if p then total, members = total + math.min(p.times or 1, cap), members + 1 end
+        parts[#parts + 1] = tally(total, members, p ~= nil)
     end
-    if s.guild then parts[#parts + 1] = ("their guild <%s> is flagged"):format(s.guild.name or s.guildKey) end
-    if s.cPlayerShown then parts[#parts + 1] = ("%d union member%s reported them"):format(s.cPlayer, s.cPlayer == 1 and "" or "s") end
-    if s.cGuildShown then parts[#parts + 1] = ("%d union member%s reported their guild"):format(s.cGuild, s.cGuild == 1 and "" or "s") end
+    if p then parts[#parts + 1] = yours(p) end
+    if g or s.cGuildShown then
+        local total, members = 0, 0
+        if s.cGuildShown then total, members = s.cGuildTotal or s.cGuild, s.cGuild end
+        if g then total, members = total + math.min(g.times or 1, cap), members + 1 end
+        local name = (g and g.name) or (s.cGuildLatest and s.cGuildLatest.n) or s.guildKey
+        parts[#parts + 1] = ("their guild <%s> has been %s"):format(name, tally(total, members, g ~= nil))
+    end
     return table.concat(parts, "; ")
 end
 
@@ -165,7 +227,7 @@ ns.OnReady(scanGroup)
 function ns.Prune()
     local db = ns.db
     local reportsRemoved, flagsRemoved = 0, 0
-    local counts = {}
+    local kept = {}
     for _, bucket in ipairs({ "players", "guilds" }) do
         local all = db.community[bucket]
         for key, reports in pairs(all) do
@@ -174,13 +236,47 @@ function ns.Prune()
                     reports[reporter] = nil
                     reportsRemoved = reportsRemoved + 1
                 else
-                    counts[reporter] = (counts[reporter] or 0) + 1
+                    kept[#kept + 1] = { all, key, reporter, r }
                 end
             end
             if next(reports) == nil then all[key] = nil end
         end
     end
-    db.reporterCounts = counts -- recount from scratch so the cap can't drift
+    -- over the total cap: drop relayed reports first, oldest first
+    if #kept > ns.LIMITS.total then
+        table.sort(kept, function(a, b)
+            if (a[4].rl ~= nil) ~= (b[4].rl ~= nil) then return a[4].rl ~= nil end
+            return (a[4].d or 0) < (b[4].d or 0)
+        end)
+        while #kept > ns.LIMITS.total do
+            local k = table.remove(kept, 1)
+            k[1][k[2]][k[3]] = nil
+            if next(k[1][k[2]]) == nil then k[1][k[2]] = nil end
+            reportsRemoved = reportsRemoved + 1
+        end
+    end
+    -- recount from scratch so the caps can't drift
+    local counts, relays = {}, {}
+    for _, k in ipairs(kept) do
+        counts[k[3]] = (counts[k[3]] or 0) + 1
+        if k[4].rl then relays[k[4].rl] = (relays[k[4].rl] or 0) + 1 end
+    end
+    db.reporterCounts, db.relayCounts = counts, relays
+
+    for id, day in pairs(db.retracted) do
+        if ns.ReportExpired(day) then db.retracted[id] = nil end
+    end
+    local today = ns.Today()
+    for k in pairs(db.filed) do
+        local day = tonumber(k:match("|(%d+)$"))
+        if not day or day < today - 1 then db.filed[k] = nil end
+    end
+    local cutoff = time() - ns.LIMITS.seenDays * 86400
+    for _, seen in ipairs({ db.seen, db.seenGuilds }) do
+        for k, t in pairs(seen) do
+            if t < cutoff then seen[k] = nil end
+        end
+    end
 
     local days = db.settings.flagExpiryDays or 0
     if days > 0 then
@@ -284,6 +380,10 @@ function ns.SlashCheck(rest)
     local s = ns.Status(key, gk)
     if s.flagged then
         ns.Print(display .. ": " .. ns.Describe(s) .. ".")
+        if (s.cPlayerRelayed or 0) > 0 then
+            ns.Print(("  %d of the union reports were passed on by other members rather than sent by the reporter."):format(s.cPlayerRelayed))
+        end
+        if s.player and s.player.private then ns.Print("  Your flag on them is private (you hadn't grouped with them).") end
     elseif (s.cPlayer or 0) > 0 or (s.cGuild or 0) > 0 then
         ns.Print(("%s: %d report(s) on them and %d on their guild, below your threshold of %d."):format(
             display, s.cPlayer or 0, s.cGuild or 0, ns.db.settings.communityThreshold))

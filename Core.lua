@@ -12,7 +12,12 @@ ns.DEFAULTS = {
     guilds = {},                               -- [guild@realm] = your flag on a guild
     community = { players = {}, guilds = {} }, -- [key] = { [reporter] = report from another union member }
     reporterCounts = {},                       -- [reporter] = reports stored from them (capped)
-    distrust = {},                             -- [reporter] = true: ignore everything they send
+    relayCounts = {},                          -- [relayer] = reports they passed on to us (capped)
+    distrust = {},                             -- [reporter] = true, or "auto" if they flooded us
+    retracted = {},                            -- ["P|key|reporter"] = day the flag was withdrawn
+    filed = {},                                -- ["reporter|day"] = new reports from them that day
+    seen = {},                                 -- [name-realm] = last time we were grouped with them
+    seenGuilds = {},                           -- [guild@realm] = last time we grouped with a member
     settings = {
         promptOnKick = true,        -- ask to flag when you are removed after summoning
         promptOnDisband = true,     -- ...or when the group is disbanded after summoning
@@ -26,12 +31,25 @@ ns.DEFAULTS = {
         shareGuild = true,
         shareGroup = true,
         shareChannel = false,       -- opt-in public channel shared by all union members
+        acceptRelays = true,        -- count reports other members pass on, not just first hand ones
         channelName = "SummonersUnion",
         communityExpiryDays = 180,  -- other members' reports stop counting after this (0 = never)
         flagExpiryDays = 0,         -- forget your own flags after this, at login (0 = never)
         showMinimap = true,
         minimapAngle = 225,         -- degrees around the minimap, 0 = east
     },
+}
+
+ns.LIMITS = {
+    countCap = 5,          -- most grievances one person can add against one target
+    perReporter = 300,     -- reports kept from any one person
+    perRelayer = 500,      -- reports any one person can pass on to us
+    relaysPerTarget = 3,   -- reports about the same target one person can pass on
+    dailyReports = 10,     -- new reports one person can file in a day before we ignore them
+    groupedDays = 7,       -- your flag is only shared if you grouped with them this recently
+    seenDays = 30,         -- how long we remember who we grouped with
+    replyRecords = 120,    -- records sent when answering a query
+    total = 5000,          -- community reports kept in all
 }
 
 local function applyDefaults(dst, src)
@@ -140,6 +158,13 @@ function ns.PlayerKey(name, realm)
     return (name .. "-" .. realm):lower(), name .. "-" .. realm
 end
 
+-- "name-realm" key back to something readable, "Name-Realm"
+function ns.DisplayName(key)
+    local n, r = tostring(key or ""):match("^([^%-]+)%-(.+)$")
+    if not n then return key end
+    return (n:gsub("^%l", string.upper)) .. "-" .. (r:gsub("^%l", string.upper))
+end
+
 -- guild names are unique per realm, key is "guild name@realm"
 function ns.GuildKey(guild, realm)
     guild = trim(guild)
@@ -193,6 +218,7 @@ local SETTINGS = {
     promptkick = { "promptOnKick", "bool" },
     promptdisband = { "promptOnDisband", "bool" },
     trustguild = { "trustGuildmates", "bool" },
+    relays = { "acceptRelays", "bool" },
     minimap = { "showMinimap", "bool" },
 }
 local SETTING_NAMES = {}
@@ -307,8 +333,15 @@ function ns.Slash(msg)
             return
         end
         ns.db.distrust[key] = (cmd == "distrust") or nil
+        if cmd == "trust" then
+            -- start their daily count over, otherwise an old flood would trip it again
+            for k in pairs(ns.db.filed) do
+                if k:sub(1, #key + 1) == key .. "|" then ns.db.filed[k] = nil end
+            end
+        end
         ns.Fire("FLAGS_CHANGED")
-        ns.Print(("%s's reports are now %s."):format(display, cmd == "distrust" and "ignored" or "counted again"))
+        ns.Print(cmd == "distrust" and ("Ignoring everything %s reports or passes on."):format(display)
+            or ("%s's reports count again."):format(display))
     elseif cmd == "set" then
         setCommand(rest)
     elseif cmd == "minimap" then

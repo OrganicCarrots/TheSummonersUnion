@@ -1,19 +1,26 @@
 -- comm: share flags with other users over addon messages (never visible chat)
 --
---   1~F~P~Name-Realm~Guild@Realm~summons~day~reason   a member flagged a player
---   1~F~G~Guild@Realm~~summons~day~reason              a member flagged a guild
---   1~X~P|G~Name-Realm|Guild@Realm                     a member withdrew their flag
---   1~Q~sinceDay                                       "send me your recent flags"
+-- live messages, sent as they happen:
+--   1~F~P~Name-Realm~Guild@Realm~summons~day~reason~count   sender flagged a player
+--   1~F~G~Guild@Realm~~summons~day~reason~count              sender flagged a guild
+--   1~X~P|G~Name-Realm|Guild@Realm~day                       sender withdrew their flag
+--   1~Q~sinceDay                                             send me what you have since then
 --
--- one entry per reporter per key in db.community so nobody can stack votes,
--- and at most MAX_PER_SENDER reports are kept from any one person
+-- answers to Q pack several records into one message, separated by ^
+--   1~B~record^record^...
+-- records are F and X as above (without the leading 1~) plus relayed ones:
+--   R~P|G~who~guild~summons~day~reason~count~reporter        someone else's flag, passed on
+--   Y~P|G~who~reporter~day                                   someone else's retraction, passed on
+--
+-- one entry per reporter per key so nobody can stack votes. relayed entries remember who
+-- passed them on, and nobody can fill more than a set number of slots either way.
+-- 1.0 clients ignore B, R and Y and the trailing count field
 local _, ns = ...
 
 local PREFIX = "SUMUNION"
-local SEP = "~"
+local SEP, RSEP = "~", "^"
 local PROTO = "1"
-local MAX_PER_SENDER = 300
-local REPLY_LIMIT = 30
+local MAX_LEN = 255
 local REPLY_COOLDOWN = 600
 local SEND_INTERVAL = 1.2
 local MAX_QUEUE = 200
@@ -22,7 +29,7 @@ ns.COMM_PREFIX = PREFIX
 if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then C_ChatInfo.RegisterAddonMessagePrefix(PREFIX) end
 
 local function clean(s, maxLen)
-    s = tostring(s or ""):gsub("[~|\r\n]", " ")
+    s = tostring(s or ""):gsub("[~|^\r\n]", " ")
     return s:sub(1, maxLen or 48)
 end
 
@@ -32,44 +39,63 @@ local function split(s)
     return out
 end
 
-local function guildField(rec)
-    if not rec.guildKey then return "" end
-    local name, realm = rec.guildKey:match("^(.-)@(.+)$")
+local function dayOf(t) return math.floor((t or time()) / 86400) end
+local function countOf(n) return math.max(1, math.min(math.floor(tonumber(n) or 1), ns.LIMITS.countCap)) end
+local function bucketOf(kind) return kind == "P" and "players" or "guilds" end
+function ns.RecordId(kind, key, reporter) return kind .. "|" .. key .. "|" .. reporter end
+
+local function guildField(guildKey, guild)
+    if not guildKey then return "" end
+    local name, realm = guildKey:match("^(.-)@(.+)$")
     if not name then return "" end
-    return clean((rec.guild or name) .. "@" .. realm, 64)
+    return clean((guild or name) .. "@" .. realm, 64)
 end
 
-local function who(kind, key, rec)
+local function who(kind, key, name)
     if kind == "P" then
-        return clean((rec.name and rec.name:find("-", 1, true)) and rec.name or key, 64)
+        return clean((name and name:find("-", 1, true)) and name or key, 64)
     end
-    local name, realm = key:match("^(.-)@(.+)$")
-    return clean((rec.name or name or "") .. "@" .. (realm or ""), 64)
+    local g, realm = key:match("^(.-)@(.+)$")
+    return clean((name or g or "") .. "@" .. (realm or ""), 64)
 end
 
-function ns.EncodeFlag(kind, key, rec)
+-- your own flag, as a record without the 1~ in front
+local function ownRecord(kind, key, rec)
     return table.concat({
-        PROTO, "F", kind, who(kind, key, rec), kind == "P" and guildField(rec) or "",
-        tostring(math.min(tonumber(rec.summons) or 0, 99)), tostring(math.floor((rec.when or time()) / 86400)),
-        clean(rec.kind or "manual", 10),
+        "F", kind, who(kind, key, rec.name), kind == "P" and guildField(rec.guildKey, rec.guild) or "",
+        tostring(math.min(tonumber(rec.summons) or 0, 99)), tostring(dayOf(rec.when)),
+        clean(rec.kind or "manual", 10), tostring(countOf(rec.times)),
     }, SEP)
 end
 
-function ns.EncodeRetract(kind, key, rec)
-    return table.concat({ PROTO, "X", kind, who(kind, key, rec) }, SEP)
+local function relayRecord(kind, key, reporter, r)
+    return table.concat({
+        "R", kind, who(kind, key, r.n), kind == "P" and guildField(r.g, r.gn) or "",
+        tostring(math.min(tonumber(r.s) or 0, 99)), tostring(r.d or ns.Today()),
+        clean(r.r or "manual", 10), tostring(countOf(r.c)), clean(reporter, 64),
+    }, SEP)
+end
+
+function ns.EncodeFlag(kind, key, rec) return PROTO .. SEP .. ownRecord(kind, key, rec) end
+
+function ns.EncodeRetract(kind, key, rec, day)
+    return table.concat({ PROTO, "X", kind, who(kind, key, rec and rec.name), tostring(day or ns.Today()) }, SEP)
 end
 
 function ns.EncodeQuery(sinceDay)
     return table.concat({ PROTO, "Q", tostring(sinceDay or 0) }, SEP)
 end
 
-function ns.DecodeMessage(text)
-    local f = split(text or "")
-    if f[1] ~= PROTO then return nil end
-    local t = f[2]
-    if t == "Q" then return { type = "Q", since = tonumber(f[3]) or 0 } end
-    if t ~= "F" and t ~= "X" then return nil end
-    local kind, id = f[3], f[4] or ""
+local function reporterKey(s)
+    if not s or not s:find("^[^%-]+%-[^%-]+$") then return nil end
+    return (ns.PlayerKey(s))
+end
+
+local function decodeRecord(f)
+    local t = f[1]
+    if t == "Q" then return { type = "Q", since = tonumber(f[2]) or 0 } end
+    if t ~= "F" and t ~= "X" and t ~= "R" and t ~= "Y" then return nil end
+    local kind, id = f[2], f[3] or ""
     local m = { type = t, kind = kind }
     if kind == "P" then
         if not id:find("^[^%-]+%-[^%-]+$") then return nil end
@@ -81,15 +107,50 @@ function ns.DecodeMessage(text)
     else
         return nil
     end
-    if t == "F" then
-        local g, realm = (f[5] or ""):match("^(.-)@(.+)$")
+    local today = ns.Today()
+    local day
+    if t == "F" or t == "R" then
+        local g, realm = (f[4] or ""):match("^(.-)@(.+)$")
         if g and g ~= "" then m.guildKey, m.guild = ns.GuildKey(g, realm) end
-        m.summons = math.max(0, math.min(tonumber(f[6]) or 0, 99))
-        m.day = tonumber(f[7]) or ns.Today()
-        if m.day > ns.Today() + 1 or m.day < ns.Today() - 3650 then return nil end
-        m.reason = (f[8] ~= nil and f[8] ~= "") and f[8] or "manual"
+        m.summons = math.max(0, math.min(tonumber(f[5]) or 0, 99))
+        day = f[6]
+        m.reason = (f[7] ~= nil and f[7] ~= "") and f[7] or "manual"
+        m.count = countOf(f[8])
+        if t == "R" then
+            m.reporter = reporterKey(f[9])
+            if not m.reporter then return nil end
+        end
+    elseif t == "X" then
+        day = f[4]
+    else
+        m.reporter = reporterKey(f[4])
+        if not m.reporter then return nil end
+        day = f[5]
     end
+    m.day = math.floor(tonumber(day) or today)
+    if m.day > today + 1 or m.day < today - 3650 then return nil end
     return m
+end
+
+-- every record in a message (batches hold several), or nil if it isn't ours
+function ns.DecodeMessages(text)
+    text = text or ""
+    if text:sub(1, #PROTO + 1) ~= PROTO .. SEP then return nil end
+    local body, list = text:sub(#PROTO + 2), {}
+    if body:sub(1, 2) == "B" .. SEP then
+        for rec in (body:sub(3) .. RSEP):gmatch("(.-)%^") do
+            local m = decodeRecord(split(rec))
+            if m and m.type ~= "Q" then list[#list + 1] = m end
+        end
+    else
+        list[1] = decodeRecord(split(body))
+    end
+    return list
+end
+
+function ns.DecodeMessage(text)
+    local list = ns.DecodeMessages(text)
+    return list and list[1]
 end
 
 -- throttled queue, the server drops addon messages sent in bursts
@@ -105,7 +166,7 @@ local function pump()
 end
 
 function ns.Send(text, chatType, target)
-    if #queue >= MAX_QUEUE or #text > 255 then return end
+    if #queue >= MAX_QUEUE or #text > MAX_LEN then return end
     queue[#queue + 1] = { text = text, chatType = chatType, target = target }
     if not ticker then ticker = C_Timer.NewTicker(SEND_INTERVAL, pump) end
 end
@@ -121,11 +182,18 @@ function ns.GroupChannel()
     return IsInRaid() and "RAID" or "PARTY"
 end
 
+local function sharingOn(chatType)
+    local st = ns.db.settings
+    if chatType == "GUILD" then return st.shareGuild end
+    if chatType == "CHANNEL" then return st.shareChannel end
+    return st.shareGroup
+end
+
 local function scopes()
-    local st, out = ns.db.settings, {}
-    if st.shareGuild and IsInGuild() then out[#out + 1] = { "GUILD" } end
-    if st.shareGroup and IsInGroup() then out[#out + 1] = { ns.GroupChannel() } end
-    if st.shareChannel then
+    local out = {}
+    if sharingOn("GUILD") and IsInGuild() then out[#out + 1] = { "GUILD" } end
+    if IsInGroup() and sharingOn("PARTY") then out[#out + 1] = { ns.GroupChannel() } end
+    if sharingOn("CHANNEL") then
         local id = channelId()
         if id then out[#out + 1] = { "CHANNEL", id } end
     end
@@ -136,50 +204,184 @@ local function broadcast(text)
     for _, s in ipairs(scopes()) do ns.Send(text, s[1], s[2]) end
 end
 
-ns.Listen("FLAG_ADDED", function(kind, key, rec) broadcast(ns.EncodeFlag(kind, key, rec)) end)
-ns.Listen("FLAG_REMOVED", function(kind, key, rec) broadcast(ns.EncodeRetract(kind, key, rec)) end)
+-- private flags (you hadn't grouped with them) never leave your client
+ns.Listen("FLAG_ADDED", function(kind, key, rec)
+    if rec.private then return end
+    ns.db.retracted[ns.RecordId(kind, key, ns.playerKey)] = nil
+    broadcast(ns.EncodeFlag(kind, key, rec))
+end)
+ns.Listen("FLAG_REMOVED", function(kind, key, rec)
+    if rec.private then return end
+    ns.db.retracted[ns.RecordId(kind, key, ns.playerKey)] = ns.Today() -- so we keep passing the retraction on
+    broadcast(ns.EncodeRetract(kind, key, rec))
+end)
 
 -- receiving
-local function store(sender, via, m)
-    local reports = ns.db.community[m.kind == "P" and "players" or "guilds"]
-    local counts = ns.db.reporterCounts
-    if m.type == "X" then
-        local r = reports[m.key]
-        if r and r[sender] then
-            r[sender] = nil
-            if next(r) == nil then reports[m.key] = nil end
-            counts[sender] = math.max(0, (counts[sender] or 1) - 1)
-            ns.Fire("FLAGS_CHANGED")
-        end
-        return
-    end
-    if ns.ReportExpired(m.day) then return end -- too old to count anyway
-    local r = reports[m.key] or {}
-    local isNew = r[sender] == nil
-    if isNew and (counts[sender] or 0) >= MAX_PER_SENDER then return end
-    r[sender] = { n = m.name, g = m.guildKey, gn = m.guild, s = m.summons, d = m.day, r = m.reason, via = via }
-    reports[m.key] = r
-    if isNew then counts[sender] = (counts[sender] or 0) + 1 end
-    ns.Fire("FLAGS_CHANGED")
+local function dropReport(bucket, key, reporter)
+    local db = ns.db
+    local all = db.community[bucket]
+    local r = all[key] and all[key][reporter]
+    if not r then return false end
+    all[key][reporter] = nil
+    if next(all[key]) == nil then all[key] = nil end
+    db.reporterCounts[reporter] = math.max(0, (db.reporterCounts[reporter] or 1) - 1)
+    if r.rl then db.relayCounts[r.rl] = math.max(0, (db.relayCounts[r.rl] or 1) - 1) end
+    return true
 end
 
-local lastReply = {}
-local function reply(chatType, target, since)
-    local slot = chatType .. tostring(target or "")
-    if lastReply[slot] and time() - lastReply[slot] < REPLY_COOLDOWN then return end
-    lastReply[slot] = time()
-    local items = {}
+-- someone filing a pile of new reports in one day is spamming, ignore them until you /su trust them
+local function flooded(reporter, day)
+    local db = ns.db
+    local k = reporter .. "|" .. day
+    db.filed[k] = (db.filed[k] or 0) + 1
+    if db.filed[k] <= ns.LIMITS.dailyReports then return false end
+    if not db.distrust[reporter] then
+        db.distrust[reporter] = "auto"
+        local display = ns.DisplayName(reporter)
+        ns.Print(("Ignoring reports from %s: they filed more than %d in one day. /su trust %s counts them again."):format(
+            display, ns.LIMITS.dailyReports, display))
+    end
+    return true
+end
+
+local function putReport(bucket, m, reporter, via, relayer)
+    local db, limits = ns.db, ns.LIMITS
+    local all = db.community[bucket]
+    local old = all[m.key] and all[m.key][reporter]
+    local newRelayer = relayer and (not old or old.rl ~= relayer)
+    -- check the caps before touching anything
+    if not old and (db.reporterCounts[reporter] or 0) >= limits.perReporter then return false end
+    if newRelayer then
+        if (db.relayCounts[relayer] or 0) >= limits.perRelayer then return false end
+        local here = 0
+        for _, r in pairs(all[m.key] or {}) do
+            if r.rl == relayer then here = here + 1 end
+        end
+        if here >= limits.relaysPerTarget then return false end
+    end
+    if not old and flooded(reporter, m.day) then return false end
+    if not old then db.reporterCounts[reporter] = (db.reporterCounts[reporter] or 0) + 1 end
+    if old and old.rl and old.rl ~= relayer then db.relayCounts[old.rl] = math.max(0, (db.relayCounts[old.rl] or 1) - 1) end
+    if newRelayer then db.relayCounts[relayer] = (db.relayCounts[relayer] or 0) + 1 end
+    all[m.key] = all[m.key] or {}
+    all[m.key][reporter] = { n = m.name, g = m.guildKey, gn = m.guild, s = m.summons, d = m.day, r = m.reason,
+                             c = m.count or 1, via = via, rl = relayer }
+    return true
+end
+
+-- returns true if anything changed
+local function handle(sender, via, m)
+    local db = ns.db
+    local bucket = bucketOf(m.kind)
+    local reporter = m.reporter or sender
+    if reporter == sender then
+        -- straight from the person who filed it, this always wins over anything relayed
+        local id = ns.RecordId(m.kind, m.key, sender)
+        if m.type == "F" or m.type == "R" then
+            if ns.ReportExpired(m.day) then return false end
+            db.retracted[id] = nil
+            return putReport(bucket, m, sender, via, nil)
+        end
+        if (db.retracted[id] or -1) < m.day then db.retracted[id] = m.day end
+        return dropReport(bucket, m.key, sender)
+    end
+
+    if not db.settings.acceptRelays or reporter == ns.playerKey or db.distrust[reporter] then return false end
+    local id = ns.RecordId(m.kind, m.key, reporter)
+    local existing = db.community[bucket][m.key] and db.community[bucket][m.key][reporter]
+    if existing and not existing.rl then return false end -- we heard this one first hand
+    if m.type == "R" then
+        if ns.ReportExpired(m.day) or (db.retracted[id] or -1) >= m.day then return false end
+        if existing and ((existing.d or 0) > m.day or ((existing.d or 0) == m.day and (existing.c or 1) >= m.count)) then
+            return false
+        end
+        return putReport(bucket, m, reporter, "RELAY", sender)
+    end
+    if (db.retracted[id] or -1) < m.day then db.retracted[id] = m.day end
+    return dropReport(bucket, m.key, reporter)
+end
+
+-- everything we know since a day, newest first, as records ready to pack
+local function syncRecords(since, skip, querier)
+    local db, me, items = ns.db, ns.playerKey, {}
+    local function add(day, rec, id, reporter)
+        if (day or 0) >= since and not skip[id] and reporter ~= querier then items[#items + 1] = { day or 0, rec } end
+    end
     for _, kind in ipairs({ "P", "G" }) do
-        for key, rec in pairs(kind == "P" and ns.db.players or ns.db.guilds) do
-            if rec.source == "you" and math.floor((rec.when or 0) / 86400) >= since then
-                items[#items + 1] = { kind, key, rec }
+        for key, rec in pairs(kind == "P" and db.players or db.guilds) do
+            if rec.source == "you" and not rec.private then
+                add(dayOf(rec.when), ownRecord(kind, key, rec), ns.RecordId(kind, key, me), me)
+            end
+        end
+        for key, reports in pairs(db.community[bucketOf(kind)]) do
+            for reporter, r in pairs(reports) do
+                if ns.ReportUsable(reporter, r) then
+                    add(r.d, relayRecord(kind, key, reporter, r), ns.RecordId(kind, key, reporter), reporter)
+                end
             end
         end
     end
-    table.sort(items, function(a, b) return (a[3].when or 0) > (b[3].when or 0) end)
-    for i = 1, math.min(#items, REPLY_LIMIT) do
-        ns.Send(ns.EncodeFlag(items[i][1], items[i][2], items[i][3]), chatType, target)
+    for id, day in pairs(db.retracted) do
+        local kind, key, reporter = id:match("^(%a)|(.-)|(.+)$")
+        if kind then
+            local target = who(kind, key, nil)
+            if reporter == me then
+                add(day, table.concat({ "X", kind, target, tostring(day) }, SEP), id, reporter)
+            else
+                add(day, table.concat({ "Y", kind, target, reporter, tostring(day) }, SEP), id, reporter)
+            end
+        end
     end
+    table.sort(items, function(a, b) return a[1] > b[1] end)
+    local out = {}
+    for i = 1, math.min(#items, ns.LIMITS.replyRecords) do out[i] = items[i][2] end
+    return out
+end
+
+-- as few messages as possible, each under the 255 byte limit
+local function pack(records)
+    local msgs, cur = {}, nil
+    local head = PROTO .. SEP .. "B" .. SEP
+    for _, rec in ipairs(records) do
+        if cur and #cur + #RSEP + #rec <= MAX_LEN then
+            cur = cur .. RSEP .. rec
+        else
+            if cur then msgs[#msgs + 1] = cur end
+            cur = head .. rec
+            if #cur > MAX_LEN then cur = nil end
+        end
+    end
+    if cur then msgs[#msgs + 1] = cur end
+    return msgs
+end
+
+function ns.SyncMessages(since, skip, querier) return pack(syncRecords(since or 0, skip or {}, querier)) end
+
+-- while we wait to answer a query, remember what others already sent so we don't repeat it
+local pending, lastReply = {}, {}
+local function slotOf(chatType, target) return chatType .. tostring(target or "") end
+
+function ns.ResetSync() pending, lastReply = {}, {} end -- used by the tests
+
+local function onQuery(channel, sender, since)
+    local target
+    if channel == "CHANNEL" then
+        target = channelId()
+        if not target then return end
+    elseif channel ~= "GUILD" and channel ~= "PARTY" and channel ~= "RAID" and channel ~= "INSTANCE_CHAT" then
+        return
+    end
+    if not sharingOn(channel) then return end
+    local slot = slotOf(channel, target)
+    if pending[slot] or (lastReply[slot] and time() - lastReply[slot] < REPLY_COOLDOWN) then return end
+    pending[slot] = { seen = {} }
+    -- random delay so the whole guild doesn't answer at once
+    C_Timer.After(3 + math.random() * 12, function()
+        local p = pending[slot]
+        pending[slot] = nil
+        lastReply[slot] = time()
+        for _, text in ipairs(ns.SyncMessages(since, p and p.seen, sender)) do ns.Send(text, channel, target) end
+    end)
 end
 
 ns.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
@@ -187,21 +389,19 @@ ns.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
     if prefix ~= PREFIX or not text or not sender or not ns.db then return end
     local senderKey = ns.PlayerKey(sender)
     if not senderKey or senderKey == ns.playerKey or ns.db.distrust[senderKey] then return end
-    local m = ns.DecodeMessage(text)
-    if not m then return end
-    if m.type == "Q" then
-        local target
-        if channel == "CHANNEL" then
-            target = channelId()
-            if not target then return end
-        elseif channel ~= "GUILD" and channel ~= "PARTY" and channel ~= "RAID" and channel ~= "INSTANCE_CHAT" then
-            return
+    local list = ns.DecodeMessages(text)
+    if not list then return end
+    local p = pending[slotOf(channel, channel == "CHANNEL" and channelId() or nil)]
+    local changed = false
+    for _, m in ipairs(list) do
+        if m.type == "Q" then
+            onQuery(channel, senderKey, m.since)
+        else
+            if p then p.seen[ns.RecordId(m.kind, m.key, m.reporter or senderKey)] = true end
+            if handle(senderKey, channel, m) then changed = true end
         end
-        -- random delay so the whole guild doesn't answer at once
-        C_Timer.After(3 + math.random() * 12, function() reply(channel, target, m.since) end)
-    else
-        store(senderKey, channel, m)
     end
+    if changed then ns.Fire("FLAGS_CHANGED") end
 end)
 
 -- don't ask for anything older than we'd keep
@@ -229,7 +429,14 @@ end
 ns.OnReady(function()
     if ns.db.settings.shareChannel then C_Timer.After(10, ns.JoinUnionChannel) end
     C_Timer.After(30, function()
-        if ns.db.settings.shareGuild and IsInGuild() then ns.Send(ns.EncodeQuery(querySince(180)), "GUILD") end
+        if sharingOn("GUILD") and IsInGuild() then ns.Send(ns.EncodeQuery(querySince(180)), "GUILD") end
+    end)
+end)
+
+-- swap lists with whoever else in a new group runs the addon
+ns.On("GROUP_JOINED", function()
+    C_Timer.After(8, function()
+        if IsInGroup() and sharingOn("PARTY") then ns.Send(ns.EncodeQuery(querySince(180)), ns.GroupChannel()) end
     end)
 end)
 

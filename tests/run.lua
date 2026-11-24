@@ -17,6 +17,7 @@ local passed, failed = 0, 0
 local function test(name, fn)
     M.Advance(120) -- let anything queued by the previous test finish first
     M.Reset()
+    ns.ResetSync()
     SummonersUnionDB = ns.ApplyDefaults({}, ns.DEFAULTS)
     ns.db = SummonersUnionDB
     local ok, err = pcall(fn)
@@ -74,6 +75,8 @@ test("summon then kick asks to flag the leader and their guild", function()
     ok(ns.db.players["badlead-whitemane"], "player flagged")
     ok(ns.db.guilds["greedy raiders@whitemane"], "guild flagged")
     eq(ns.db.players["badlead-whitemane"].source, "you", "source")
+    eq(ns.db.players["badlead-whitemane"].private, nil, "shared, you were grouped with them")
+    eq(ns.db.guilds["greedy raiders@whitemane"].private, nil, "guild shared too")
 end)
 
 test("leaving on your own never prompts", function()
@@ -220,6 +223,7 @@ test("garbage and other addons' messages are ignored", function()
 end)
 
 test("a query is answered with your own recent flags after a delay", function()
+    ns.NoteGrouped("badlead-whitemane")
     ns.FlagPlayer("badlead-whitemane", { name = "Badlead-Whitemane", kind = "kick", source = "you" }, true)
     M.Advance(5)
     M.sent = {}
@@ -275,7 +279,8 @@ test("slash commands flag, check and unflag", function()
     ns.Slash("flagguild Greedy Raiders")
     ok(ns.db.guilds["greedy raiders@whitemane"], "guild flagged")
     ns.Slash("check Badlead")
-    ok(M.chat[#M.chat]:find("you flagged them", 1, true), "check output")
+    ok(table.concat(M.chat, "\n"):find("Badlead-Whitemane: you flagged them on", 1, true), "check output")
+    ok(M.chat[#M.chat]:find("private", 1, true), "says the flag is private")
     ns.Slash("unflag Badlead")
     eq(ns.db.players["badlead-whitemane"], nil, "unflagged")
     ns.Slash("set window 45")
@@ -456,6 +461,202 @@ test("your own flags are only forgotten at login, and only if you ask", function
     eq(forgotten, 1, "forgotten at the next prune")
     eq(ns.db.players["old-whitemane"], nil, "old flag gone")
     ok(ns.db.players["new-whitemane"], "recent flag kept")
+end)
+
+-- counts, relays and sync ----------------------------------------------------------------
+local function hear(text, channel, sender)
+    M.Fire("CHAT_MSG_ADDON", "SUMUNION", text, channel or "CHANNEL", sender)
+end
+local function flagMsg(daysAgo, count)
+    return ns.EncodeFlag("P", "badlead-whitemane", { name = "Badlead-Whitemane", kind = "kick",
+        when = time() - (daysAgo or 0) * 86400, times = count })
+end
+local function relayMsg(reporter, daysAgo, count, target)
+    return ("1~R~P~%s~~0~%d~kick~%d~%s"):format(target or "Badlead-Whitemane", ns.Today() - (daysAgo or 0), count or 1, reporter)
+end
+
+test("warnings say how many times and by how many members", function()
+    hear(flagMsg(0, 3), "CHANNEL", "Stranger-Faerlina")
+    hear(flagMsg(0, 1), "CHANNEL", "Other-Mankrik")
+    M.Fire("PARTY_INVITE_REQUEST", "Badlead")
+    ok(M.alerts[1]:find("flagged 4 times by 2 union members", 1, true), "alert: " .. tostring(M.alerts[1]))
+    ns.NoteGrouped("badlead-whitemane")
+    ns.FlagPlayer("badlead-whitemane", { name = "Badlead-Whitemane", kind = "kick", source = "you" }, true)
+    local text = ns.Describe(ns.Status("badlead-whitemane"))
+    ok(text:find("flagged 5 times by 3 union members, including you", 1, true), text)
+    ok(text:find("you flagged them on", 1, true), text)
+end)
+
+test("one person's count is capped and 1.0 messages count once", function()
+    hear(flagMsg(0, 99), "CHANNEL", "Stranger-Faerlina")
+    hear("1~F~P~Badlead-Whitemane~~2~" .. ns.Today() .. "~kick", "CHANNEL", "Old-Mankrik")
+    local n, _, _, total = ns.Community("players", "badlead-whitemane")
+    eq(n, 2, "members")
+    eq(total, ns.LIMITS.countCap + 1, "total")
+end)
+
+test("relayed reports count, but one relayer only counts once toward the threshold", function()
+    hear(relayMsg("Ann-Faerlina"), "GUILD", "Relayer-Whitemane")
+    hear(relayMsg("Bob-Faerlina"), "GUILD", "Relayer-Whitemane")
+    local s = ns.Status("badlead-whitemane")
+    eq(s.cPlayer, 2, "both stored")
+    eq(s.cPlayerRelayed, 2, "both relayed")
+    eq(s.flagged, false, "one relayer is one source, even over guild chat")
+    hear(flagMsg(0), "CHANNEL", "Carl-Mankrik")
+    s = ns.Status("badlead-whitemane")
+    eq(s.flagged, true, "a second source makes it show")
+    ok(ns.Describe(s):find("flagged 3 times by 3 union members", 1, true), ns.Describe(s))
+    ns.Slash("distrust Relayer-Whitemane")
+    eq(ns.Status("badlead-whitemane").cPlayer, 1, "distrusting the relayer drops what they passed on")
+end)
+
+test("a relayer can only pass on a few reports about one target", function()
+    for i = 1, 6 do hear(relayMsg("Fake" .. string.char(96 + i) .. "-Faerlina"), "GUILD", "Liar-Whitemane") end
+    eq(ns.Status("badlead-whitemane").cPlayer, ns.LIMITS.relaysPerTarget, "capped")
+end)
+
+test("relays can be switched off", function()
+    ns.Slash("set relays off")
+    hear(relayMsg("Ann-Faerlina"), "GUILD", "Relayer-Whitemane")
+    eq(ns.Status("badlead-whitemane").cPlayer, 0, "ignored")
+end)
+
+test("a first hand report beats relayed news about it", function()
+    hear(flagMsg(1, 1), "GUILD", "Ann-Faerlina")
+    hear(relayMsg("Ann-Faerlina", 0, 5), "GUILD", "Relayer-Whitemane")
+    local r = ns.db.community.players["badlead-whitemane"]["ann-faerlina"]
+    eq(r.rl, nil, "still first hand")
+    eq(r.c, 1, "count untouched")
+    hear("1~B~Y~P~Badlead-Whitemane~ann-faerlina~" .. ns.Today(), "GUILD", "Relayer-Whitemane")
+    ok(ns.db.community.players["badlead-whitemane"], "a relayed retraction can't remove a first hand report")
+end)
+
+test("retractions stick, so relays can't bring a report back", function()
+    hear(flagMsg(2), "GUILD", "Ann-Faerlina")
+    hear(ns.EncodeRetract("P", "badlead-whitemane", { name = "Badlead-Whitemane" }), "GUILD", "Ann-Faerlina")
+    eq(ns.Status("badlead-whitemane").cPlayer, 0, "retracted")
+    hear(relayMsg("Ann-Faerlina", 2), "GUILD", "Relayer-Whitemane")
+    eq(ns.Status("badlead-whitemane").cPlayer, 0, "stale relay ignored")
+    hear(flagMsg(0), "GUILD", "Ann-Faerlina")
+    eq(ns.Status("badlead-whitemane").cPlayer, 1, "a new first hand report still counts")
+    -- a relayed retraction removes a relayed copy
+    hear(relayMsg("Bob-Faerlina", 1), "GUILD", "Relayer-Whitemane")
+    eq(ns.Status("badlead-whitemane").cPlayer, 2, "relayed copy stored")
+    hear("1~B~Y~P~Badlead-Whitemane~bob-faerlina~" .. ns.Today(), "GUILD", "Other-Whitemane")
+    eq(ns.Status("badlead-whitemane").cPlayer, 1, "relayed copy removed")
+end)
+
+test("someone filing lots of reports in a day gets ignored", function()
+    for i = 1, ns.LIMITS.dailyReports + 1 do
+        local target = "Victim" .. string.char(96 + i) .. "-Whitemane"
+        hear(ns.EncodeFlag("P", target:lower(), { name = target, kind = "kick" }), "GUILD", "Spammer-Whitemane")
+    end
+    eq(ns.db.distrust["spammer-whitemane"], "auto", "auto distrusted")
+    ok(table.concat(M.chat, "\n"):find("Ignoring reports from Spammer-Whitemane", 1, true), "tells you")
+    eq(ns.Status("victima-whitemane").cPlayer, 0, "their earlier reports stop counting too")
+    ns.Slash("trust Spammer-Whitemane")
+    eq(ns.Status("victima-whitemane").cPlayer, 1, "trusting them again restores them")
+    hear(ns.EncodeFlag("P", "newvictim-whitemane", { name = "Newvictim-Whitemane", kind = "kick" }), "GUILD", "Spammer-Whitemane")
+    eq(ns.Status("newvictim-whitemane").cPlayer, 1, "and their daily count starts over")
+end)
+
+test("flags on people you haven't grouped with stay private", function()
+    ns.Slash("flag Stranger-Mankrik rude")
+    local r = ns.db.players["stranger-mankrik"]
+    eq(r.private, true, "private")
+    ok(M.chat[#M.chat]:find("Only you will see it", 1, true), "says so")
+    M.Advance(5)
+    eq(#M.sent, 0, "nothing broadcast")
+    eq(#ns.SyncMessages(0), 0, "not in sync answers either")
+    eq(ns.Status("stranger-mankrik").flagged, true, "still warns you")
+    ns.NoteGrouped("stranger-mankrik")
+    ns.Slash("flag Stranger-Mankrik rude again")
+    eq(ns.db.players["stranger-mankrik"].private, nil, "shared once you've grouped")
+    M.Advance(5)
+    eq(#M.sent, 1, "broadcast to guild")
+end)
+
+test("grouping with someone is remembered for a week", function()
+    joinBadGroup()
+    ok(ns.GroupedRecently("badlead-whitemane"), "leader")
+    ok(ns.GroupedRecently("greedy raiders@whitemane", true), "their guild")
+    M.SetGroup(nil)
+    M.Advance(8 * 86400)
+    eq(ns.GroupedRecently("badlead-whitemane"), false, "forgotten after a week")
+end)
+
+test("sync answers pack everything we know into a few messages", function()
+    ns.NoteGrouped("badlead-whitemane")
+    ns.FlagPlayer("badlead-whitemane", { name = "Badlead-Whitemane", kind = "kick", source = "you" }, true)
+    ns.NoteGrouped("gone-whitemane")
+    ns.FlagPlayer("gone-whitemane", { name = "Gone-Whitemane", kind = "kick", source = "you" }, true)
+    ns.UnflagPlayer("gone-whitemane")
+    for i = 1, 8 do hear(ns.EncodeFlag("P", ("target%d-mankrik"):format(i), { name = ("Target%d-Mankrik"):format(i), kind = "kick" }), "CHANNEL", "Ann-Faerlina") end
+    hear(flagMsg(0), "CHANNEL", "Asker-Whitemane")
+    M.Advance(10)
+    M.sent = {}
+    local msgs = ns.SyncMessages(0, nil, "asker-whitemane")
+    local types, reporters = {}, {}
+    for _, text in ipairs(msgs) do
+        ok(#text <= 255, "fits in one addon message")
+        for _, m in ipairs(ns.DecodeMessages(text)) do
+            types[m.type] = (types[m.type] or 0) + 1
+            if m.reporter then reporters[m.reporter] = true end
+        end
+    end
+    eq(types.F, 1, "your shared flag")
+    eq(types.X, 1, "your retraction")
+    eq(types.R, 8, "reports you heard from others")
+    eq(reporters["asker-whitemane"], nil, "the asker's own reports aren't sent back")
+    ok(#msgs < 10, "batched (" .. #msgs .. " messages)")
+end)
+
+test("a query isn't answered with what someone else already sent", function()
+    hear(flagMsg(0), "GUILD", "Ann-Faerlina")
+    M.Advance(10)
+    M.sent = {}
+    hear(ns.EncodeQuery(0), "GUILD", "Asker-Whitemane")
+    hear("1~B~" .. relayMsg("ann-faerlina"):sub(3), "GUILD", "Quick-Whitemane")
+    M.Advance(20)
+    eq(#M.sent, 0, "nothing left to add")
+end)
+
+test("no answers on a scope you don't share with", function()
+    hear(flagMsg(0), "GUILD", "Ann-Faerlina")
+    ns.Slash("share guild off")
+    M.Advance(10)
+    M.sent = {}
+    hear(ns.EncodeQuery(0), "GUILD", "Asker-Whitemane")
+    M.Advance(20)
+    eq(#M.sent, 0, "stayed quiet")
+end)
+
+test("joining a group asks it for its lists", function()
+    joinBadGroup()
+    M.Advance(10)
+    local asked = false
+    for _, m in ipairs(M.sent) do
+        local d = ns.DecodeMessage(m.text)
+        if d and d.type == "Q" and m.chatType == "PARTY" then asked = true end
+    end
+    ok(asked, "query sent to the party")
+end)
+
+test("pruning keeps the report store bounded", function()
+    local old = ns.LIMITS.total
+    ns.LIMITS.total = 3
+    hear(flagMsg(5), "GUILD", "Ann-Faerlina")
+    hear(flagMsg(1), "GUILD", "Bob-Faerlina")
+    hear(relayMsg("Cat-Faerlina", 0), "GUILD", "Relayer-Whitemane")
+    hear(relayMsg("Dan-Faerlina", 0), "GUILD", "Relayer-Whitemane")
+    ns.Prune()
+    ns.LIMITS.total = old
+    local reports = ns.db.community.players["badlead-whitemane"]
+    local n = 0
+    for _ in pairs(reports) do n = n + 1 end
+    eq(n, 3, "capped")
+    ok(reports["ann-faerlina"] and reports["bob-faerlina"], "first hand reports kept over relayed ones")
+    eq(ns.db.relayCounts["relayer-whitemane"], 1, "relay counts recounted")
 end)
 
 print(("\n%d passed, %d failed"):format(passed, failed))

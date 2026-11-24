@@ -14,12 +14,14 @@ shares flags with other people running the addon.
   leader, or the leader and their guild. Leaving on your own doesn't trigger it, and nothing
   gets flagged unless you click.
 - Raid warning when a flagged player invites you or joins your group, same for members of a
-  flagged guild. Optional auto-decline for their invites (off by default).
+  flagged guild. It tells you how many times they've been flagged and by how many people,
+  e.g. "flagged 6 times by 4 union members". Optional auto-decline (off by default).
 - Red line on flagged players' tooltips.
 - `/su flag` and `/su flagguild` to flag someone by hand. Works on any class.
 - Flags get shared with other users in your guild and group through hidden addon messages,
-  dungeon finder groups included. There's an opt-in public channel too. When you log in,
-  guildmates send you their recent flags.
+  dungeon finder groups included. There's an opt-in public channel too. Whenever users meet
+  (guild at login, a group when you join it, the channel) they swap their whole lists,
+  including reports they got from other people, so everyone's list fills in on its own.
 - Export/import your list as text to pass it to friends or your guild.
 - Options panel under Options > AddOns (or `/su options`) and a minimap button. Left click
   opens the list, right click opens the options.
@@ -42,26 +44,40 @@ shares flags with other people running the addon.
 | `/su set minsummons <n>` | Summons needed before a kick counts (default 1) |
 | `/su set threshold <n>` | How many people need to report someone before you see it (default 2) |
 | `/su set autodecline on\|off` | Decline invites from flagged players |
+| `/su set relays on\|off` | Count reports other people pass on, not just first hand ones (default on) |
 | `/su set expiry <days>` | Ignore other people's reports after this long (default 180, 0 = never) |
 | `/su set flagexpiry <days>` | Forget your own flags after this long, checked at login (default 0 = never) |
 | `/su minimap` | Show/hide the minimap button |
 | `/su test` | Show the kick popup without flagging anything |
 
-## False reports
+## Abuse and false reports
 
-Anyone can flag anyone, so other people's reports are treated carefully:
+A shared list is only useful if people can't spam it, so:
 
-- Your own flags always count. Someone else's report only shows up once 2 different people
-  have reported the same player (`/su set threshold`). One report from a guildmate is enough,
-  unless you turn that off with `/su set trustguild off`.
-- Each person counts once per player however many times they send it, and at most 300
-  reports are stored from any one person.
-- `/su distrust <name>` drops everything from that person. Removing a flag sends a
-  retraction, so it goes away for everyone else too.
+- You can only share a flag on someone you've been in a group with in the last 7 days (or
+  a member of that guild). Flags from the kick popup always qualify. Anything else stays
+  private: it still warns you, but nobody else sees it.
+- Anyone who files more than 10 new reports in one day gets ignored automatically. You get
+  a message, and `/su trust <name>` undoes it.
+- Someone else's report only warns you once 2 different sources have reported the same
+  player (`/su set threshold`). Everyone who reported directly is one source, and
+  everything one person passes on counts as one, so making up reporters doesn't help. One
+  first hand report from a guildmate is enough, unless you `/su set trustguild off`.
+- One person counts once per player. Their count of grievances is capped at 5, one person
+  can pass on at most 3 reports about the same player, and at most 300 reports are stored
+  from anyone.
+- `/su distrust <name>` drops everything that person reported or passed on.
+  `/su set relays off` ignores passed-on reports altogether.
+- Removing a flag sends a retraction that spreads like the reports do, and old copies
+  can't bring it back.
 - Reports expire after 180 days. Your own flags stay until you remove them, unless you set
   `/su set flagexpiry`.
 - Nothing is ever posted in chat, flagged players are never messaged, and nobody gets told
   they were flagged. The addon never kicks or reports anyone. Warnings only show for you.
+
+The addon is open source, so someone could change their copy to skip the checks on their
+own flags. That's why the checks that matter (thresholds, caps, flood detection) happen on
+the receiving end.
 
 ## Game versions
 
