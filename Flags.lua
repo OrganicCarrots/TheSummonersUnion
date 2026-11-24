@@ -335,47 +335,11 @@ end
 ns.OnReady(ns.Prune)
 
 -- commands
--- wow forever names are "First Last", everywhere else they're one word
-local function twoWordNames()
-    local v = GetBuildInfo and select(4, GetBuildInfo())
-    return type(v) == "number" and v >= 16000 and v < 17000
-end
-
-local function knownPlayer(key)
-    local db = ns.db
-    if not key then return false end
-    if db.players[key] or db.community.players[key] or db.seen[key] or ns.UnitKey("target") == key then return true end
-    for _, unit in ipairs(ns.GroupUnits()) do
-        if ns.UnitKey(unit) == key then return true end
-    end
-    return false
-end
-
--- "name reason" -> name, reason. quotes mark the name, otherwise the longest name we
--- know wins, otherwise one word (two on wow forever)
-local function splitName(text)
-    local quoted, rest = text:match('^"(.-)"%s*(.-)$')
-    if quoted then return quoted, rest end
-    local words = {}
-    for w in text:gmatch("%S+") do words[#words + 1] = w end
-    for i = #words, 2, -1 do
-        if knownPlayer(ns.PlayerKey(table.concat(words, " ", 1, i))) then
-            return table.concat(words, " ", 1, i), table.concat(words, " ", i + 1)
-        end
-    end
-    local n = (twoWordNames() and #words >= 2) and 2 or 1
-    return table.concat(words, " ", 1, n), table.concat(words, " ", n + 1)
-end
-
 -- "/su flag Name-Realm some reason" or a bare "/su flag" for your target.
--- commands without a reason take the whole text as the name
-local function resolvePlayer(rest, withReason)
-    rest = ns.Trim(rest)
-    local name, reason
-    if rest ~= "" then
-        if withReason then name, reason = splitName(rest) else name, reason = rest:gsub('^"(.-)"$', "%1"), "" end
-    end
-    if name and name ~= "" then
+-- two part names are typed First-Last, same as they come from the target
+local function resolvePlayer(rest)
+    local name, reason = ns.Trim(rest):match("^(%S+)%s*(.-)$")
+    if name then
         local key, display = ns.PlayerKey(name)
         for _, unit in ipairs(ns.GroupUnits()) do
             if ns.UnitKey(unit) == key then
@@ -417,25 +381,25 @@ function ns.FlagGuildByHand(gk, gn)
     return ns.FlagGuild(gk, { name = gn, kind = "manual", summons = 0, source = "you" })
 end
 
--- a name typed without a realm still finds the flag if it's on another realm (targets can
+-- a guild typed without a realm still finds the flag if it's on another realm (targets can
 -- be from connected realms). nil plus true if it's on more than one, they need to say which
-local function onAnyRealm(store, key, pattern)
+local function guildOnAnyRealm(key)
+    local store = ns.db.guilds
     if store[key] then return key end
-    local want, found = key:match(pattern), nil
+    local want, found = key:match("^(.-)@"), nil
     for k in pairs(store) do
-        if k:match(pattern) == want then
+        if k:match("^(.-)@") == want then
             if found then return nil, true end
             found = k
         end
     end
     return found
 end
-local PLAYER_NAME, GUILD_NAME = "^([^%-]+)%-", "^(.-)@"
 
 function ns.SlashFlag(rest)
-    local key, display, gk, gn, reason = resolvePlayer(rest, true)
+    local key, display, gk, gn, reason = resolvePlayer(rest)
     if not key then
-        ns.Print('Usage: /su flag <name> [reason], or target the player first. Put names with a space in quotes: /su flag "First Last" reason')
+        ns.Print("Usage: /su flag <name> [reason], or target the player first. Two part names go as First-Last.")
         return
     end
     ns.FlagByHand(key, display, gk, gn, reason)
@@ -452,13 +416,8 @@ end
 
 function ns.SlashUnflag(rest)
     local key, display = resolvePlayer(rest)
-    local many
-    if key and not rest:find("-", 1, true) then key, many = onAnyRealm(ns.db.players, key, PLAYER_NAME) end
-    local rec = key and ns.db.players[key]
-    if rec and ns.UnflagPlayer(key) then
-        ns.Print("Removed your flag on " .. (rec.name or display) .. ".")
-    elseif many then
-        ns.Print("You flagged that name on more than one realm. Add the realm: /su unflag Name-Realm")
+    if key and ns.UnflagPlayer(key) then
+        ns.Print("Removed your flag on " .. display .. ".")
     else
         ns.Print("You haven't flagged that player.")
     end
@@ -467,7 +426,7 @@ end
 function ns.SlashUnflagGuild(rest)
     local gk, gn = resolveGuild(rest)
     local many
-    if gk and not rest:find("@", 1, true) then gk, many = onAnyRealm(ns.db.guilds, gk, GUILD_NAME) end
+    if gk and not rest:find("@", 1, true) then gk, many = guildOnAnyRealm(gk) end
     local rec = gk and ns.db.guilds[gk]
     if rec and ns.UnflagGuild(gk) then
         ns.Print("Removed your flag on <" .. (rec.name or gn) .. ">.")
@@ -483,10 +442,6 @@ function ns.SlashCheck(rest)
     if not key then
         ns.Print("Usage: /su check <name>, or target the player first.")
         return
-    end
-    if not rest:find("-", 1, true) and not ns.db.players[key] and not ns.db.community.players[key] then
-        local other = onAnyRealm(ns.db.players, key, PLAYER_NAME) or onAnyRealm(ns.db.community.players, key, PLAYER_NAME)
-        if other then key, display = other, ns.DisplayName(other) end
     end
     local s = ns.Status(key, gk)
     if s.flagged then

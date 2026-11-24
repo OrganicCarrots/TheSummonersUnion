@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.0-beta2.2
+
+- Undid the names-with-a-space change in `/su flag`, `/su check` and `/su unflag`, it made
+  things worse. The name is one word again, so type two part names as `First-Last`, the
+  same way they show up when you flag your target
+- Right-click menu shows the full name
+
 ## v1.0.0-beta2.1
 
 - Right-click a player's portrait or party/raid frame for a Summoners Union entry to flag

@@ -153,17 +153,14 @@ local function normRealm(realm)
 end
 ns.NormRealm = normRealm
 
--- capitalize each part, wow forever names are two words
-local function capitalize(s) return (s:gsub("^%l", string.upper):gsub(" %l", string.upper)) end
-
 -- "Name", "Name-Realm" or ("Name", "Realm") -> key "name-realm" plus display name "Name-Realm"
 function ns.PlayerKey(name, realm)
-    name = trim(name):gsub("%s+", " ")
+    name = trim(name)
     if name == "" then return nil end
     local n, r = name:match("^([^%-]+)%-(.+)$")
-    if n then name, realm = trim(n), r end
-    name = capitalize(name)
-    realm = normRealm(realm)
+    if n then name, realm = n, r end
+    name = name:gsub("^%l", string.upper)
+    realm = normRealm(realm):gsub("^%l", string.upper)
     return (name .. "-" .. realm):lower(), name .. "-" .. realm
 end
 
@@ -171,7 +168,7 @@ end
 function ns.DisplayName(key)
     local n, r = tostring(key or ""):match("^([^%-]+)%-(.+)$")
     if not n then return key end
-    return capitalize(n) .. "-" .. (r:gsub("^%l", string.upper))
+    return (n:gsub("^%l", string.upper)) .. "-" .. (r:gsub("^%l", string.upper))
 end
 
 -- guild names are unique per realm, key is "guild name@realm"

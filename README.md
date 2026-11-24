@@ -41,7 +41,7 @@ shares flags with other people running the addon.
 |---|---|
 | `/su` | Open the list (everything, your players, your guilds, community reports) |
 | `/su options` | Open the options panel |
-| `/su flag [name] [reason]` | Flag a player (your target if you don't give a name). Names with a space can go in quotes: `/su flag "First Last" reason` |
+| `/su flag [name] [reason]` | Flag a player (your target if you don't give a name). Type two part names as `First-Last` |
 | `/su flagguild [guild]` | Flag a guild (your target's guild if you don't give one) |
 | `/su unflag <name>`, `/su unflagguild <guild>` | Remove your flag |
 | `/su check [name]` | Look someone up |

@@ -23,15 +23,14 @@ local function addEntries(_, root, context)
     if not ns.db then return end
     local key, display, gk, gn = who(context)
     if not key or key == ns.playerKey then return end
-    local short = display:match("^[^%-]+") or display
     root:CreateDivider()
     local sub = root:CreateButton(ns.TITLE)
     if ns.db.players[key] then
-        sub:CreateButton("Unflag " .. short, function()
+        sub:CreateButton("Unflag " .. display, function()
             if ns.UnflagPlayer(key) then ns.Print("Removed your flag on " .. display .. ".") end
         end)
     else
-        sub:CreateButton("Flag " .. short, function() ns.FlagByHand(key, display, gk, gn) end)
+        sub:CreateButton("Flag " .. display, function() ns.FlagByHand(key, display, gk, gn) end)
     end
     if gk and gn then
         if ns.db.guilds[gk] then
