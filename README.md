@@ -104,4 +104,6 @@ is mostly a Classic thing but it runs everywhere.
   [BigWigs packager](https://github.com/BigWigsMods/packager). Needs the `CF_API_KEY` secret
   and `## X-Curse-Project-ID:` in the TOC.
 
+If you like it and want to say thanks: https://buymeacoffee.com/organiccarrots
+
 MIT licensed. Not affiliated with Blizzard.
