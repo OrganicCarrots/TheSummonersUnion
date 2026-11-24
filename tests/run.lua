@@ -398,8 +398,11 @@ test("the minimap button shows, hides, drags and clicks", function()
     eq(M.openedCategory, 4242, "right-click opens the options")
 
     ns.FlagPlayer("badlead-whitemane", { name = "Badlead-Whitemane", kind = "kick" }, true)
+    ns.db.community.players["grief-whitemane"] = { ["guildie-whitemane"] = { d = ns.Today(), via = "GUILD" } }
     b.scripts.OnEnter(b)
-    ok(table.concat(M.tooltip, "\n"):find("Your flags: 1 players, 0 guilds", 1, true), "tooltip counts")
+    local tip = table.concat(M.tooltip, "\n")
+    ok(tip:find("Your flags: 1 player, 0 guilds", 1, true), "tooltip counts your flags")
+    ok(tip:find("Flagged by other members: 1 player, 0 guilds", 1, true), "tooltip counts other members' flags")
 end)
 
 test("the addon compartment entry opens the list and options", function()

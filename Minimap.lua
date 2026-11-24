@@ -11,15 +11,16 @@ local button
 -- used by both the minimap button and the compartment
 function ns.FillTooltip(tt, draggable)
     tt:AddLine(ns.TITLE)
-    local warnings = 0
+    local others = { players = 0, guilds = 0 }
     for _, bucket in ipairs({ "players", "guilds" }) do
         for key in pairs(ns.db.community[bucket]) do
             local _, shown = ns.Community(bucket, key)
-            if shown then warnings = warnings + 1 end
+            if shown then others[bucket] = others[bucket] + 1 end
         end
     end
-    tt:AddLine(("Your flags: %d players, %d guilds"):format(ns.Count(ns.db.players), ns.Count(ns.db.guilds)), 1, 1, 1)
-    tt:AddLine(("Union reports you're warned about: %d"):format(warnings), 1, 1, 1)
+    local function counts(p, g) return ns.Plural(p, "player") .. ", " .. ns.Plural(g, "guild") end
+    tt:AddLine("Your flags: " .. counts(ns.Count(ns.db.players), ns.Count(ns.db.guilds)), 1, 1, 1)
+    tt:AddLine("Flagged by other members: " .. counts(others.players, others.guilds), 1, 1, 1)
     tt:AddLine(" ")
     tt:AddLine("Left-click: open the list", 0.7, 0.7, 0.7)
     tt:AddLine("Right-click: options", 0.7, 0.7, 0.7)
