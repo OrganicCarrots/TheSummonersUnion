@@ -1,6 +1,10 @@
 # Changelog
 
-## v1.0.0
+## v1.0.0-beta2
+
+- Added WoW Forever. It showed up as incompatible there before
+
+## v1.0.0-beta1
 
 First release.
 

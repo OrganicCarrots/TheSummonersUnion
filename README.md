@@ -92,8 +92,8 @@ the receiving end.
 
 ## Game versions
 
-Classic Era (incl. Hardcore and SoD), TBC Anniversary, MoP Classic and Retail. Summon kicking
-is mostly a Classic thing but it runs everywhere.
+Classic Era (incl. Hardcore and SoD), TBC Anniversary, MoP Classic, WoW Forever and Retail.
+Summon kicking is mostly a Classic thing but it runs everywhere.
 
 ## Development
 
