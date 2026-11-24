@@ -6,6 +6,8 @@
   things worse. The name is one word again, so type two part names as `First-Last`, the
   same way they show up when you flag your target
 - Right-click menu shows the full name
+- Took the Paste and Copy buttons back out, addons can't actually use the clipboard. The
+  bigger clickable box stays
 
 ## v1.0.0-beta2.1
 

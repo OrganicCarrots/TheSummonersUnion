@@ -359,18 +359,14 @@ test("the reset button in the options asks first, then restores the defaults", f
     eq(ns.db.settings.autoDecline, false, "defaults back")
 end)
 
-test("the import box has a paste button and a hint until there's text", function()
+test("the import box shows a hint until there's text", function()
     ns.Slash("import")
     local box = _G.SummonersUnionIO
-    eq(box.second.text, "Paste", "paste button")
     ok(box.hint.shown, "hint while empty")
     box.edit:SetText("something")
     box.edit.scripts.OnTextChanged(box.edit)
     ok(not box.hint.shown, "hint goes once there's text")
-    box.second.scripts.OnClick(box.second)
-    eq(box.edit:GetText(), "", "paste clears the box first")
     ns.Slash("export")
-    eq(box.second.text, "Copy", "copy button on export")
     ok(not box.hint.shown, "no hint over the export")
 end)
 
