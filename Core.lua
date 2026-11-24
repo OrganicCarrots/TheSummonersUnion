@@ -35,6 +35,7 @@ ns.DEFAULTS = {
         acceptRelays = true,        -- count reports other members pass on, not just first hand ones
         forwardReports = true,      -- pass new reports on to your other channels as soon as you get them
         channelName = "SummonersUnion",
+        channelSuggested = false,   -- we've asked once whether to join the channel
         communityExpiryDays = 180,  -- other members' reports stop counting after this (0 = never)
         flagExpiryDays = 0,         -- forget your own flags after this, at login (0 = never)
         showMinimap = true,
@@ -241,7 +242,7 @@ end
 -- reset everything except the minimap button position
 function ns.ResetSettings()
     for field, value in pairs(ns.DEFAULTS.settings) do
-        if field ~= "minimapAngle" then ns.SetSetting(field, value) end
+        if field ~= "minimapAngle" and field ~= "channelSuggested" then ns.SetSetting(field, value) end
     end
 end
 
@@ -255,7 +256,7 @@ local HELP = {
     "/su check [name] - look a player up",
     "/su list - print your flags to chat",
     "/su export  |  /su import - share lists as text",
-    "/su share guild|group|channel on|off",
+    "/su share guild|group|channel on|off - /su share channel on is recommended",
     "/su distrust <name>  |  /su trust <name> - ignore or restore a reporter",
     "/su set <option> <value> - type /su set to list the options",
     "/su minimap - show or hide the minimap button",
@@ -330,7 +331,12 @@ function ns.Slash(msg)
             return
         end
         ns.SetSetting(field, on)
-        ns.Print(("Sharing with %s is now %s."):format(scope, on and "on" or "off"))
+        if field == "shareChannel" then
+            ns.Print(on and "Joined the union channel. Reports now reach every union member on your realm, not just your guild and groups."
+                or "Left the union channel. You'll only share with your guild and groups. /su share channel on to rejoin.")
+        else
+            ns.Print(("Sharing with %s is now %s."):format(scope, on and "on" or "off"))
+        end
     elseif cmd == "distrust" or cmd == "trust" then
         local key, display = ns.PlayerKey(rest)
         if not key then

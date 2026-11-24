@@ -19,7 +19,10 @@ shares flags with other people running the addon.
 - Red line on flagged players' tooltips.
 - `/su flag` and `/su flagguild` to flag someone by hand. Works on any class.
 - Flags get shared with other users in your guild and group through hidden addon messages,
-  dungeon finder groups included. There's an opt-in public channel too. Whenever users meet
+  dungeon finder groups included. There's also a hidden union channel for everyone on your
+  realm. It's opt-in, but joining it gives the best results, since reports then reach every
+  user on the realm instead of just your guild and groups. You're asked once after you
+  install, and `/su share channel on` joins it any time. Whenever users meet
   (guild at login, a group when you join it, the channel) they swap their whole lists,
   including reports they got from other people, so everyone's list fills in on its own.
   New reports are also passed on as they happen: when you get one you haven't seen, your
@@ -41,7 +44,7 @@ shares flags with other people running the addon.
 | `/su check [name]` | Look someone up |
 | `/su list` | Print your flags to chat |
 | `/su export`, `/su import` | Share your list as text |
-| `/su share guild\|group\|channel on\|off` | Where your flags get shared |
+| `/su share guild\|group\|channel on\|off` | Where your flags get shared (`/su share channel on` recommended) |
 | `/su distrust <name>`, `/su trust <name>` | Ignore (or stop ignoring) everything from one person |
 | `/su set window <minutes>` | How soon after your last summon a kick counts (default 20) |
 | `/su set minsummons <n>` | Summons needed before a kick counts (default 1) |

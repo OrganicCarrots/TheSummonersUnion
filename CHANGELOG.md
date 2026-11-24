@@ -19,6 +19,8 @@
 - A report passed on in your name that you never made gets withdrawn automatically
 - Withdrawn flags spread to everyone and stay withdrawn
 - `/su set relays off` ignores passed-on reports
+- Asks once whether you want to join the union channel (still opt-in), and the options and
+  tooltips point out it gives the best results
 - Don't answer list requests on a scope you've turned sharing off for
 - 1.0 ignores passed-on reports and the new count field, so mixed versions still work
 

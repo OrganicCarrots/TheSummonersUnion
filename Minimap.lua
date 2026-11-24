@@ -24,6 +24,10 @@ function ns.FillTooltip(tt, draggable)
     tt:AddLine("Left-click: open the list", 0.7, 0.7, 0.7)
     tt:AddLine("Right-click: options", 0.7, 0.7, 0.7)
     if draggable then tt:AddLine("Drag: move this button", 0.7, 0.7, 0.7) end
+    if not ns.db.settings.shareChannel then
+        tt:AddLine(" ")
+        tt:AddLine("Tip: join the union channel (/su share channel on) so reports reach every union member on your realm.", 1, 0.82, 0, true)
+    end
 end
 
 local function onClick(mouseButton)

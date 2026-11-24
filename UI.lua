@@ -16,6 +16,27 @@ local function flagFromPrompt(d, withGuild)
     end
 end
 
+-- one time suggestion to join the union channel, it stays opt-in
+StaticPopupDialogs["SUMMONERSUNION_CHANNEL"] = {
+    text = "The Summoners Union works best when you join the union channel: reports then reach every union member on your realm, not just your guild and groups.\n\nIt's a hidden channel, nothing shows in your chat. Join it now? You can change this any time in the options.",
+    button1 = "Join channel",
+    button2 = "Not now",
+    OnAccept = function() ns.Slash("share channel on") end,
+    OnCancel = function() ns.Print("No problem. If you change your mind: /su share channel on, or the options panel.") end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+function ns.SuggestChannel()
+    local st = ns.db.settings
+    if st.shareChannel or st.channelSuggested then return end
+    st.channelSuggested = true
+    StaticPopup_Show("SUMMONERSUNION_CHANNEL")
+end
+ns.OnReady(function() C_Timer.After(20, ns.SuggestChannel) end)
+
 StaticPopupDialogs["SUMMONERSUNION_KICKED"] = {
     text = "%s",
     button1 = "Flag player",

@@ -153,8 +153,8 @@ local function build()
         "Send your new flags to guildmates who run the addon, and answer their requests for recent flags. Uses hidden addon messages, never chat.")
     checkbox(RIGHT_X, -116, "shareGroup", "Share your flags with your group",
         "Send your new flags to party, raid or dungeon-finder group members who run the addon.")
-    checkbox(RIGHT_X, -142, "shareChannel", "Use the public union channel",
-        "Join a hidden channel shared by every union member on your realm, to send and receive flags beyond your guild. Off by default.")
+    checkbox(RIGHT_X, -142, "shareChannel", "Join the union channel (recommended)",
+        "For best results, turn this on: reports then reach every union member on your realm, not just your guild and groups. It's a hidden channel, nothing shows in your chat, and it stays off unless you turn it on.")
     checkbox(RIGHT_X, -168, "forwardReports", "Pass on reports from others",
         "When you get a report you haven't seen, pass it on to your other channels a few seconds later, so new reports reach everyone online quickly.")
 
