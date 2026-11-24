@@ -14,7 +14,7 @@
 --
 -- one entry per reporter per key so nobody can stack votes. relayed entries remember who
 -- passed them on, and nobody can fill more than a set number of slots either way.
--- 1.0 clients ignore B, R and Y and the trailing count field
+-- the count field is optional, a flag without one counts once
 local _, ns = ...
 
 local PREFIX = "SUMUNION"

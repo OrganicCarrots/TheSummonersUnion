@@ -487,7 +487,7 @@ test("warnings say how many times and by how many members", function()
     ok(text:find("you flagged them on", 1, true), text)
 end)
 
-test("one person's count is capped and 1.0 messages count once", function()
+test("one person's count is capped and flags without a count count once", function()
     hear(flagMsg(0, 99), "CHANNEL", "Stranger-Faerlina")
     hear("1~F~P~Badlead-Whitemane~~2~" .. ns.Today() .. "~kick", "CHANNEL", "Old-Mankrik")
     local n, _, _, total = ns.Community("players", "badlead-whitemane")

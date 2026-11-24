@@ -1,42 +1,23 @@
 # Changelog
 
-## v1.1.0
-
-- Warnings say how many times a player or guild has been flagged and by how many members
-- Users swap their whole lists when they meet (guild at login, groups when you join, the
-  union channel), including reports passed on from others, so lists fill in on their own
-- Your flags are only shared if you've grouped with them in the last 7 days, otherwise
-  they stay private
-- Anyone filing more than 10 new reports in a day gets ignored automatically (`/su trust`
-  to undo)
-- Everything one person passes on counts once toward the warning threshold, and they can
-  pass on at most 3 reports about the same player
-- New reports are passed on as they happen: when you get one you haven't seen, it goes to
-  your other channels a few seconds later (`/su set forward off` to stop), capped at 30 a
-  minute
-- A passed-on report counts as its own source if the reporter has messaged you directly
-  before, made-up names still count once per person passing them on
-- A report passed on in your name that you never made gets withdrawn automatically
-- Withdrawn flags spread to everyone and stay withdrawn
-- `/su set relays off` ignores passed-on reports
-- Asks once whether you want to join the union channel (still opt-in), and the options and
-  tooltips point out it gives the best results
-- Don't answer list requests on a scope you've turned sharing off for
-- 1.0 ignores passed-on reports and the new count field, so mixed versions still work
-
 ## v1.0.0
 
-- Options panel (Options > AddOns, or `/su options`)
-- Minimap button, plus an entry in the retail addon compartment
-- Flags are now shared in dungeon finder, LFR and battleground groups
-- Community reports expire after 180 days (`/su set expiry`)
-- Optional expiry for your own flags (`/su set flagexpiry`), checked at login
-- Turning off the union channel now actually leaves it
-- `/su set` values are clamped, e.g. threshold 0 becomes 1
-- Options button on the list window
+First release.
 
-## v0.1.0
-
-- First release: summon-kick detection and popup, warnings on invites and in groups,
-  optional auto-decline, tooltip line, flagging by hand, sharing with guild/group/channel,
-  export/import
+- Warlocks: your Ritual of Summoning casts in a group are counted. If you get kicked (or
+  the group disbands) within 20 minutes of your last summon, you're asked whether to flag
+  the leader, or the leader and their guild. Leaving on your own never triggers it
+- Warnings when a flagged player invites you or joins your group, with how many times
+  they've been flagged and by how many members. Optional auto-decline
+- Red tooltip line on flagged players
+- Flag players and guilds by hand with `/su flag` and `/su flagguild`
+- Flags are shared with other users in your guild and group (dungeon finder too) and on
+  the opt-in union channel. New reports are passed on as they happen, and users swap their
+  lists when they meet, so everyone's list fills in on its own
+- Spam protection: flags are only shared if you grouped with that player in the last 7
+  days, anyone filing more than 10 reports a day is ignored, reports need 2 sources before
+  they warn you, made-up reporters count once, and `/su distrust` drops everything from one
+  person
+- Reports expire after 180 days, and withdrawn flags are withdrawn for everyone
+- Export/import your list as text
+- Options panel (`/su options`) and a minimap button
