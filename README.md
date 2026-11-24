@@ -22,6 +22,9 @@ shares flags with other people running the addon.
   dungeon finder groups included. There's an opt-in public channel too. Whenever users meet
   (guild at login, a group when you join it, the channel) they swap their whole lists,
   including reports they got from other people, so everyone's list fills in on its own.
+  New reports are also passed on as they happen: when you get one you haven't seen, your
+  addon sends it to your other channels a few seconds later, so it reaches everyone online
+  quickly. People who are offline get it from the next sync.
 - Export/import your list as text to pass it to friends or your guild.
 - Options panel under Options > AddOns (or `/su options`) and a minimap button. Left click
   opens the list, right click opens the options.
@@ -45,6 +48,7 @@ shares flags with other people running the addon.
 | `/su set threshold <n>` | How many people need to report someone before you see it (default 2) |
 | `/su set autodecline on\|off` | Decline invites from flagged players |
 | `/su set relays on\|off` | Count reports other people pass on, not just first hand ones (default on) |
+| `/su set forward on\|off` | Pass new reports on to your other channels (default on) |
 | `/su set expiry <days>` | Ignore other people's reports after this long (default 180, 0 = never) |
 | `/su set flagexpiry <days>` | Forget your own flags after this long, checked at login (default 0 = never) |
 | `/su minimap` | Show/hide the minimap button |
@@ -60,14 +64,18 @@ A shared list is only useful if people can't spam it, so:
 - Anyone who files more than 10 new reports in one day gets ignored automatically. You get
   a message, and `/su trust <name>` undoes it.
 - Someone else's report only warns you once 2 different sources have reported the same
-  player (`/su set threshold`). Everyone who reported directly is one source, and
-  everything one person passes on counts as one, so making up reporters doesn't help. One
-  first hand report from a guildmate is enough, unless you `/su set trustguild off`.
+  player (`/su set threshold`). Everyone who reported directly is one source. A passed-on
+  report only counts as its own source if that reporter has messaged your addon directly
+  at some point, so they're a real user. Made-up names count once per person passing them
+  on. One first hand report from a guildmate is enough, unless you `/su set trustguild off`.
+- If someone passes on a report in your name that you never made, your addon withdraws it
+  as soon as it sees it.
 - One person counts once per player. Their count of grievances is capped at 5, one person
   can pass on at most 3 reports about the same player, and at most 300 reports are stored
   from anyone.
 - `/su distrust <name>` drops everything that person reported or passed on.
-  `/su set relays off` ignores passed-on reports altogether.
+  `/su set relays off` ignores passed-on reports altogether. Passing reports on is capped
+  at 30 a minute, and spam that trips the daily limit is never passed on.
 - Removing a flag sends a retraction that spreads like the reports do, and old copies
   can't bring it back.
 - Reports expire after 180 days. Your own flags stay until you remove them, unless you set

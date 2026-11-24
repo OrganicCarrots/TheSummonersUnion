@@ -659,5 +659,113 @@ test("pruning keeps the report store bounded", function()
     eq(ns.db.relayCounts["relayer-whitemane"], 1, "relay counts recounted")
 end)
 
+-- passing reports on as they happen --------------------------------------------------------
+local function sentRecords(kind)
+    local out = {}
+    for _, s in ipairs(M.sent) do
+        for _, m in ipairs(ns.DecodeMessages(s.text) or {}) do
+            if not kind or m.type == kind then out[#out + 1] = { chatType = s.chatType, m = m } end
+        end
+    end
+    return out
+end
+local function onScope(list, chatType)
+    local n = 0
+    for _, x in ipairs(list) do if x.chatType == chatType then n = n + 1 end end
+    return n
+end
+
+test("a new report is passed on to your other channels within seconds", function()
+    joinBadGroup()
+    ns.Slash("share channel on")
+    M.Advance(10)
+    M.sent = {}
+    hear(flagMsg(0, 2), "GUILD", "Ann-Faerlina")
+    M.Advance(12)
+    local relays = sentRecords("R")
+    eq(onScope(relays, "PARTY"), 1, "to the group")
+    eq(onScope(relays, "CHANNEL"), 1, "to the union channel")
+    eq(onScope(relays, "GUILD"), 0, "not back where it came from")
+    eq(relays[1].m.reporter, "ann-faerlina", "keeps the original reporter")
+    eq(relays[1].m.count, 2, "and their count")
+    M.sent = {}
+    hear(flagMsg(0, 2), "GUILD", "Ann-Faerlina")
+    M.Advance(12)
+    eq(#sentRecords("R"), 0, "only passed on the first time")
+end)
+
+test("reports aren't passed on where someone else already did", function()
+    joinBadGroup()
+    M.Advance(10)
+    M.sent = {}
+    hear(flagMsg(0), "GUILD", "Ann-Faerlina")
+    hear(relayMsg("ann-faerlina"), "PARTY", "Quick-Whitemane")
+    M.Advance(12)
+    eq(#sentRecords("R"), 0, "nothing left to pass on")
+end)
+
+test("retractions are passed on too", function()
+    joinBadGroup()
+    hear(flagMsg(1), "GUILD", "Ann-Faerlina")
+    M.Advance(20)
+    M.sent = {}
+    hear(ns.EncodeRetract("P", "badlead-whitemane", { name = "Badlead-Whitemane" }), "GUILD", "Ann-Faerlina")
+    M.Advance(12)
+    local y = sentRecords("Y")
+    eq(#y, 1, "retraction passed on")
+    eq(y[1].chatType, "PARTY", "to the group")
+    eq(y[1].m.reporter, "ann-faerlina", "for the right reporter")
+end)
+
+test("passing on can be switched off and is rate limited", function()
+    joinBadGroup()
+    M.Advance(10)
+    ns.Slash("set forward off")
+    M.sent = {}
+    hear(flagMsg(0), "GUILD", "Ann-Faerlina")
+    M.Advance(12)
+    eq(#sentRecords("R"), 0, "off")
+    ns.Slash("set forward on")
+    local old = ns.LIMITS.forwardPerMinute
+    ns.LIMITS.forwardPerMinute = 2
+    for i = 1, 4 do hear(flagMsg(0), "GUILD", ("Rep%s-Faerlina"):format(string.char(96 + i))) end
+    M.Advance(12)
+    ns.LIMITS.forwardPerMinute = old
+    eq(#sentRecords("R"), 2, "capped per minute, the rest waits for the next sync")
+end)
+
+test("passed-on reports from people who've messaged us count as their own source", function()
+    hear(ns.EncodeQuery(0), "CHANNEL", "Ann-Faerlina")
+    hear(ns.EncodeQuery(0), "CHANNEL", "Bob-Faerlina")
+    hear(relayMsg("ann-faerlina"), "GUILD", "Relayer-Whitemane")
+    hear(relayMsg("bob-faerlina"), "GUILD", "Relayer-Whitemane")
+    eq(ns.Status("badlead-whitemane").flagged, true, "two real reporters, one relayer")
+    hear(relayMsg("Made-Up"), "GUILD", "Liar-Whitemane")
+    hear(relayMsg("Also-Fake"), "GUILD", "Liar-Whitemane")
+    hear(relayMsg("Made-Up", 0, 1, "Innocent-Whitemane"), "GUILD", "Liar-Whitemane")
+    hear(relayMsg("Also-Fake", 0, 1, "Innocent-Whitemane"), "GUILD", "Liar-Whitemane")
+    eq(ns.Status("innocent-whitemane").flagged, false, "made-up reporters still count once")
+end)
+
+test("a forged report in your name gets withdrawn", function()
+    M.Advance(10)
+    M.sent = {}
+    hear(relayMsg("mylock-whitemane"), "GUILD", "Liar-Whitemane")
+    M.Advance(3)
+    local x = sentRecords("X")
+    eq(#x, 1, "withdrawal sent")
+    eq(x[1].chatType, "GUILD", "where the forgery showed up")
+    eq(ns.Status("badlead-whitemane").cPlayer, 0, "not stored")
+    ok(ns.db.retracted[ns.RecordId("P", "badlead-whitemane", "mylock-whitemane")], "kept so syncs carry it")
+    -- but a real flag of yours is left alone
+    ns.NoteGrouped("realone-whitemane")
+    ns.FlagPlayer("realone-whitemane", { name = "Realone-Whitemane", kind = "kick", source = "you" }, true)
+    M.Advance(10)
+    M.sent = {}
+    hear(relayMsg("mylock-whitemane", 0, 1, "Realone-Whitemane"), "GUILD", "Friend-Whitemane")
+    M.Advance(3)
+    eq(#sentRecords("X"), 0, "nothing withdrawn")
+end)
+
 print(("\n%d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

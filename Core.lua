@@ -18,6 +18,7 @@ ns.DEFAULTS = {
     filed = {},                                -- ["reporter|day"] = new reports from them that day
     seen = {},                                 -- [name-realm] = last time we were grouped with them
     seenGuilds = {},                           -- [guild@realm] = last time we grouped with a member
+    known = {},                                -- [name-realm] = last time they messaged us directly
     settings = {
         promptOnKick = true,        -- ask to flag when you are removed after summoning
         promptOnDisband = true,     -- ...or when the group is disbanded after summoning
@@ -32,6 +33,7 @@ ns.DEFAULTS = {
         shareGroup = true,
         shareChannel = false,       -- opt-in public channel shared by all union members
         acceptRelays = true,        -- count reports other members pass on, not just first hand ones
+        forwardReports = true,      -- pass new reports on to your other channels as soon as you get them
         channelName = "SummonersUnion",
         communityExpiryDays = 180,  -- other members' reports stop counting after this (0 = never)
         flagExpiryDays = 0,         -- forget your own flags after this, at login (0 = never)
@@ -49,6 +51,8 @@ ns.LIMITS = {
     groupedDays = 7,       -- your flag is only shared if you grouped with them this recently
     seenDays = 30,         -- how long we remember who we grouped with
     replyRecords = 120,    -- records sent when answering a query
+    forwardPerMinute = 30, -- reports we pass on per minute, the rest wait for the next sync
+    knownDays = 180,       -- how long someone who messaged us directly counts as a real reporter
     total = 5000,          -- community reports kept in all
 }
 
@@ -219,6 +223,7 @@ local SETTINGS = {
     promptdisband = { "promptOnDisband", "bool" },
     trustguild = { "trustGuildmates", "bool" },
     relays = { "acceptRelays", "bool" },
+    forward = { "forwardReports", "bool" },
     minimap = { "showMinimap", "bool" },
 }
 local SETTING_NAMES = {}

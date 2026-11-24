@@ -259,6 +259,10 @@ local function putReport(bucket, m, reporter, via, relayer)
         end
         if here >= limits.relaysPerTarget then return false end
     end
+    if old and not relayer and not old.rl and old.d == m.day and (old.c or 1) == (m.count or 1) then
+        if via == "GUILD" then old.via = via end -- same report, but now we know it came from the guild
+        return false -- nothing new, so nothing to pass on
+    end
     if not old and flooded(reporter, m.day) then return false end
     if not old then db.reporterCounts[reporter] = (db.reporterCounts[reporter] or 0) + 1 end
     if old and old.rl and old.rl ~= relayer then db.relayCounts[old.rl] = math.max(0, (db.relayCounts[old.rl] or 1) - 1) end
@@ -361,7 +365,75 @@ function ns.SyncMessages(since, skip, querier) return pack(syncRecords(since or 
 local pending, lastReply = {}, {}
 local function slotOf(chatType, target) return chatType .. tostring(target or "") end
 
-function ns.ResetSync() pending, lastReply = {}, {} end -- used by the tests
+-- passing reports on as soon as we hear them, so they reach everyone online within seconds.
+-- each one goes out once, after a short random wait, and not to a channel where someone
+-- else already sent it. past the per minute cap the rest waits for the next sync
+local outbox, flushing, forwarded, windowStart, denied = {}, false, 0, 0, {}
+
+function ns.ResetSync() -- used by the tests
+    pending, lastReply, outbox, flushing, forwarded, windowStart, denied = {}, {}, {}, false, 0, 0, {}
+end
+
+local function flush()
+    flushing = false
+    for _, box in pairs(outbox) do
+        local recs = {}
+        for _, id in ipairs(box.order) do
+            if box.recs[id] then recs[#recs + 1] = box.recs[id] end
+        end
+        for _, text in ipairs(pack(recs)) do ns.Send(text, box.chatType, box.target) end
+    end
+    outbox = {}
+end
+
+local function forward(id, rec, arrivedOn)
+    if not ns.db.settings.forwardReports then return end
+    if time() - windowStart >= 60 then windowStart, forwarded = time(), 0 end
+    if forwarded >= ns.LIMITS.forwardPerMinute then return end
+    forwarded = forwarded + 1
+    for _, sc in ipairs(scopes()) do
+        local slot = slotOf(sc[1], sc[2])
+        if slot ~= arrivedOn then
+            local box = outbox[slot]
+            if not box then
+                box = { chatType = sc[1], target = sc[2], recs = {}, order = {}, listed = {} }
+                outbox[slot] = box
+            end
+            if not box.listed[id] then
+                box.listed[id] = true
+                box.order[#box.order + 1] = id
+            end
+            box.recs[id] = rec
+        end
+    end
+    if not flushing then
+        flushing = true
+        C_Timer.After(2 + math.random() * 6, flush)
+    end
+end
+
+-- what we now hold for a report, ready to pass on: the report, or its retraction
+local function currentRecord(kind, key, reporter)
+    local db = ns.db
+    local reports = db.community[bucketOf(kind)][key]
+    local r = reports and reports[reporter]
+    if r then return relayRecord(kind, key, reporter, r) end
+    local day = db.retracted[ns.RecordId(kind, key, reporter)] or ns.Today()
+    return table.concat({ "Y", kind, who(kind, key, nil), reporter, tostring(day) }, SEP)
+end
+
+-- someone passing on a report in our name that we never made (or took back): withdraw it
+local function denyForgery(m, id, channel)
+    if m.type ~= "R" then return end
+    local own = (m.kind == "P" and ns.db.players or ns.db.guilds)[m.key]
+    if own and own.source == "you" and not own.private then return end
+    if denied[id] and time() - denied[id] < REPLY_COOLDOWN then return end
+    denied[id] = time()
+    ns.db.retracted[id] = ns.Today()
+    local target = channel == "CHANNEL" and channelId() or nil
+    if channel == "CHANNEL" and not target then return end
+    ns.Send(ns.EncodeRetract(m.kind, m.key, { name = m.name }), channel, target)
+end
 
 local function onQuery(channel, sender, since)
     local target
@@ -391,14 +463,24 @@ ns.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
     if not senderKey or senderKey == ns.playerKey or ns.db.distrust[senderKey] then return end
     local list = ns.DecodeMessages(text)
     if not list then return end
-    local p = pending[slotOf(channel, channel == "CHANNEL" and channelId() or nil)]
+    ns.db.known[senderKey] = time()
+    local arrivedOn = slotOf(channel, channel == "CHANNEL" and channelId() or nil)
+    local p, box = pending[arrivedOn], outbox[arrivedOn]
     local changed = false
     for _, m in ipairs(list) do
         if m.type == "Q" then
             onQuery(channel, senderKey, m.since)
         else
-            if p then p.seen[ns.RecordId(m.kind, m.key, m.reporter or senderKey)] = true end
-            if handle(senderKey, channel, m) then changed = true end
+            local reporter = m.reporter or senderKey
+            local id = ns.RecordId(m.kind, m.key, reporter)
+            if p then p.seen[id] = true end
+            if box then box.recs[id] = nil end -- someone beat us to it here
+            if reporter == ns.playerKey then
+                denyForgery(m, id, channel)
+            elseif handle(senderKey, channel, m) then
+                changed = true
+                forward(id, currentRecord(m.kind, m.key, reporter), arrivedOn)
+            end
         end
     end
     if changed then ns.Fire("FLAGS_CHANGED") end

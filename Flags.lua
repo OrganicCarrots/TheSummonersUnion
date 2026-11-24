@@ -93,8 +93,9 @@ end
 
 -- returns: members who reported it, whether that's enough to warn, newest report,
 -- total grievances, and how many of the reports were relayed.
--- the threshold counts sources, not reports: everything one person relays counts once,
--- so making up reporters can't push anyone over it
+-- the threshold counts sources, not reports. a passed-on report only counts as its own
+-- source if the reporter has messaged us directly at some point (so they're a real user),
+-- otherwise everything one person passes on counts once. making up names doesn't help
 function ns.Community(bucket, key)
     local reports = key and ns.db.community[bucket][key]
     local n, total, relayed, trusted, latest = 0, 0, 0, false, nil
@@ -106,7 +107,7 @@ function ns.Community(bucket, key)
                 n = n + 1
                 total = total + math.min(r.c or 1, cap)
                 if r.rl then relayed = relayed + 1 end
-                local src = r.rl or reporter
+                local src = (r.rl and not ns.db.known[reporter]) and r.rl or reporter
                 if not sources[src] then sources[src], nSources = true, nSources + 1 end
                 if r.via == "GUILD" and not r.rl and ns.db.settings.trustGuildmates then trusted = true end
                 if not latest or (r.d or 0) > (latest.d or 0) then latest = r end
@@ -276,6 +277,10 @@ function ns.Prune()
         for k, t in pairs(seen) do
             if t < cutoff then seen[k] = nil end
         end
+    end
+    cutoff = time() - ns.LIMITS.knownDays * 86400
+    for k, t in pairs(db.known) do
+        if t < cutoff then db.known[k] = nil end
     end
 
     local days = db.settings.flagExpiryDays or 0

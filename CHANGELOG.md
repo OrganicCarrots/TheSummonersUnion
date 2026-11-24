@@ -11,6 +11,12 @@
   to undo)
 - Everything one person passes on counts once toward the warning threshold, and they can
   pass on at most 3 reports about the same player
+- New reports are passed on as they happen: when you get one you haven't seen, it goes to
+  your other channels a few seconds later (`/su set forward off` to stop), capped at 30 a
+  minute
+- A passed-on report counts as its own source if the reporter has messaged you directly
+  before, made-up names still count once per person passing them on
+- A report passed on in your name that you never made gets withdrawn automatically
 - Withdrawn flags spread to everyone and stay withdrawn
 - `/su set relays off` ignores passed-on reports
 - Don't answer list requests on a scope you've turned sharing off for

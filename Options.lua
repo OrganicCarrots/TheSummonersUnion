@@ -155,23 +155,25 @@ local function build()
         "Send your new flags to party, raid or dungeon-finder group members who run the addon.")
     checkbox(RIGHT_X, -142, "shareChannel", "Use the public union channel",
         "Join a hidden channel shared by every union member on your realm, to send and receive flags beyond your guild. Off by default.")
+    checkbox(RIGHT_X, -168, "forwardReports", "Pass on reports from others",
+        "When you get a report you haven't seen, pass it on to your other channels a few seconds later, so new reports reach everyone online quickly.")
 
-    header(RIGHT_X, -182, "Community reports")
-    stepper(RIGHT_X, -202, "communityThreshold", "Reporters needed", { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, plain,
+    header(RIGHT_X, -208, "Community reports")
+    stepper(RIGHT_X, -228, "communityThreshold", "Reporters needed", { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, plain,
         "How many different union members must report the same player before you're warned about them. Everything one person passes on counts as one.")
-    checkbox(RIGHT_X, -230, "trustGuildmates", "One guildmate's report is enough",
+    checkbox(RIGHT_X, -256, "trustGuildmates", "One guildmate's report is enough",
         "Count a report from your own guild as enough on its own, whatever the number above.")
-    checkbox(RIGHT_X, -256, "acceptRelays", "Count reports passed on by others",
+    checkbox(RIGHT_X, -282, "acceptRelays", "Count reports passed on by others",
         "Members pass on reports they got from other members, so the list fills in on its own. These can't be checked, so everything one person passes on counts as one toward the number above, and /su distrust drops everything they filed or passed on.")
-    stepper(RIGHT_X, -286, "communityExpiryDays", "Forget reports after", { 30, 60, 90, 180, 365, 0 }, days,
+    stepper(RIGHT_X, -312, "communityExpiryDays", "Forget reports after", { 30, 60, 90, 180, 365, 0 }, days,
         "Reports from other members stop counting once they're this old, and are cleared out when you log in.", true)
 
-    header(RIGHT_X, -326, "Your flags")
-    stepper(RIGHT_X, -346, "flagExpiryDays", "Forget your flags after", { 90, 180, 365, 730, 0 }, days,
+    header(RIGHT_X, -352, "Your flags")
+    stepper(RIGHT_X, -372, "flagExpiryDays", "Forget your flags after", { 90, 180, 365, 730, 0 }, days,
         "Forget your own (and imported) flags once they're this old. Checked when you log in or /reload, so you can change your mind first.", true)
 
     local list = button("Open the list", 110, function() ns.ToggleWindow() end)
-    list:SetPoint("TOPLEFT", RIGHT_X, -380)
+    list:SetPoint("TOPLEFT", RIGHT_X, -406)
     local export = button("Export", 80, function() ns.ShowExport() end)
     export:SetPoint("LEFT", list, "RIGHT", 6, 0)
     local import = button("Import", 80, function() ns.ShowImport() end)
