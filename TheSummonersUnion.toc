@@ -1,0 +1,22 @@
+## Interface: 11509, 20506, 50504, 120105
+## Title: The Summoners Union
+## Notes: Flags players and guilds who invite a warlock to summon the group, then kick them.
+## Author: OrganicCarrots
+## Version: @project-version@
+## SavedVariables: SummonersUnionDB
+## X-License: MIT
+## X-Curse-Project-ID: 1828673
+## IconTexture: Interface\Icons\Spell_Shadow_Twilight
+## AddonCompartmentFunc: SummonersUnion_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: SummonersUnion_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: SummonersUnion_OnAddonCompartmentLeave
+
+Core.lua
+Serialize.lua
+Flags.lua
+Comm.lua
+Detect.lua
+Tooltip.lua
+UI.lua
+Options.lua
+Minimap.lua

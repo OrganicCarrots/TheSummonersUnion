@@ -1,0 +1,31 @@
+# push a v* tag to test, package and upload to CurseForge
+# needs the CF_API_KEY secret and X-Curse-Project-ID in the TOC
+# tags with alpha/beta in the name go up as alpha/beta files
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y lua5.1
+      - run: lua5.1 tests/run.lua
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # lets the packager attach the zip to a GitHub release too
+    env:
+      CF_API_KEY: ${{ secrets.CF_API_KEY }}
+      GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the packager builds the changelog and version from git history
+      - uses: BigWigsMods/packager@v2
