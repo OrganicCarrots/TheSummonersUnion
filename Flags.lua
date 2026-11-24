@@ -13,7 +13,7 @@ local function upsert(store, key, rec)
         old.times = (old.times or 1) + 1
         old.when = rec.when or time()
         old.summons = (old.summons or 0) + (rec.summons or 0)
-        for _, f in ipairs({ "name", "guild", "guildKey", "zone", "kind", "reason", "note", "source" }) do
+        for _, f in ipairs({ "name", "guild", "guildKey", "zone", "kind", "reason", "note", "source", "class" }) do
             if rec[f] ~= nil and rec[f] ~= "" then old[f] = rec[f] end
         end
         old.private = (old.private and rec.private) or nil -- once shared, stays shared
@@ -41,7 +41,10 @@ local PRIVATE_NOTE = " Only you will see it: you haven't been in a group with %s
 
 function ns.FlagPlayer(key, rec, quiet)
     if not key then return end
-    if rec.source == "you" then rec.private = not ns.GroupedRecently(key) or nil end
+    if rec.source == "you" then
+        rec.private = not ns.GroupedRecently(key) or nil
+        rec.class = rec.class or ns.playerClass
+    end
     local r = upsert(ns.db.players, key, rec)
     ns.Fire("FLAGS_CHANGED")
     if rec.source == "you" then ns.Fire("FLAG_ADDED", "P", key, r) end
@@ -55,7 +58,10 @@ end
 
 function ns.FlagGuild(key, rec, quiet)
     if not key then return end
-    if rec.source == "you" then rec.private = not ns.GroupedRecently(key, true) or nil end
+    if rec.source == "you" then
+        rec.private = not ns.GroupedRecently(key, true) or nil
+        rec.class = rec.class or ns.playerClass
+    end
     local r = upsert(ns.db.guilds, key, rec)
     ns.Fire("FLAGS_CHANGED")
     if rec.source == "you" then ns.Fire("FLAG_ADDED", "G", key, r) end
@@ -139,6 +145,31 @@ end
 
 local function plural(n, word) return n .. " " .. word .. (n == 1 and "" or "s") end
 ns.Plural = plural
+
+function ns.ClassName(token)
+    local name = LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[token] or token
+    return tostring(name or "?"):lower()
+end
+
+-- who's behind the reports on someone, "2 warlocks, 1 priest", warlocks first
+function ns.ReporterClasses(bucket, key)
+    local counts, order = {}, {}
+    for reporter, r in pairs(key and ns.db.community[bucket][key] or {}) do
+        if r.cl and ns.ReportUsable(reporter, r) then
+            if not counts[r.cl] then counts[r.cl], order[#order + 1] = 0, r.cl end
+            counts[r.cl] = counts[r.cl] + 1
+        end
+    end
+    if #order == 0 then return nil end
+    table.sort(order, function(a, b)
+        if (a == "WARLOCK") ~= (b == "WARLOCK") then return a == "WARLOCK" end
+        if counts[a] ~= counts[b] then return counts[a] > counts[b] end
+        return a < b
+    end)
+    local parts = {}
+    for i, cl in ipairs(order) do parts[i] = plural(counts[cl], ns.ClassName(cl)) end
+    return table.concat(parts, ", ")
+end
 
 -- "flagged 6 times by 4 union members, including you"
 local function tally(total, members, mine)
@@ -304,10 +335,47 @@ end
 ns.OnReady(ns.Prune)
 
 -- commands
+-- wow forever names are "First Last", everywhere else they're one word
+local function twoWordNames()
+    local v = GetBuildInfo and select(4, GetBuildInfo())
+    return type(v) == "number" and v >= 16000 and v < 17000
+end
+
+local function knownPlayer(key)
+    local db = ns.db
+    if not key then return false end
+    if db.players[key] or db.community.players[key] or db.seen[key] or ns.UnitKey("target") == key then return true end
+    for _, unit in ipairs(ns.GroupUnits()) do
+        if ns.UnitKey(unit) == key then return true end
+    end
+    return false
+end
+
+-- "name reason" -> name, reason. quotes mark the name, otherwise the longest name we
+-- know wins, otherwise one word (two on wow forever)
+local function splitName(text)
+    local quoted, rest = text:match('^"(.-)"%s*(.-)$')
+    if quoted then return quoted, rest end
+    local words = {}
+    for w in text:gmatch("%S+") do words[#words + 1] = w end
+    for i = #words, 2, -1 do
+        if knownPlayer(ns.PlayerKey(table.concat(words, " ", 1, i))) then
+            return table.concat(words, " ", 1, i), table.concat(words, " ", i + 1)
+        end
+    end
+    local n = (twoWordNames() and #words >= 2) and 2 or 1
+    return table.concat(words, " ", 1, n), table.concat(words, " ", n + 1)
+end
+
 -- "/su flag Name-Realm some reason" or a bare "/su flag" for your target.
-local function resolvePlayer(rest)
-    local name, reason = ns.Trim(rest):match("^(%S+)%s*(.-)$")
-    if name then
+-- commands without a reason take the whole text as the name
+local function resolvePlayer(rest, withReason)
+    rest = ns.Trim(rest)
+    local name, reason
+    if rest ~= "" then
+        if withReason then name, reason = splitName(rest) else name, reason = rest:gsub('^"(.-)"$', "%1"), "" end
+    end
+    if name and name ~= "" then
         local key, display = ns.PlayerKey(name)
         for _, unit in ipairs(ns.GroupUnits()) do
             if ns.UnitKey(unit) == key then
@@ -337,16 +405,40 @@ local function resolveGuild(rest)
     if UnitExists("target") then return ns.UnitGuild("target") end
 end
 
+-- also used by the right-click menu
+function ns.FlagByHand(key, display, gk, gn, reason)
+    return ns.FlagPlayer(key, {
+        name = display, guildKey = gk, guild = gn, kind = "manual", summons = 0, source = "you",
+        reason = (reason and reason ~= "" and reason) or nil, zone = GetRealZoneText and GetRealZoneText() or nil,
+    })
+end
+
+function ns.FlagGuildByHand(gk, gn)
+    return ns.FlagGuild(gk, { name = gn, kind = "manual", summons = 0, source = "you" })
+end
+
+-- a name typed without a realm still finds the flag if it's on another realm (targets can
+-- be from connected realms). nil plus true if it's on more than one, they need to say which
+local function onAnyRealm(store, key, pattern)
+    if store[key] then return key end
+    local want, found = key:match(pattern), nil
+    for k in pairs(store) do
+        if k:match(pattern) == want then
+            if found then return nil, true end
+            found = k
+        end
+    end
+    return found
+end
+local PLAYER_NAME, GUILD_NAME = "^([^%-]+)%-", "^(.-)@"
+
 function ns.SlashFlag(rest)
-    local key, display, gk, gn, reason = resolvePlayer(rest)
+    local key, display, gk, gn, reason = resolvePlayer(rest, true)
     if not key then
-        ns.Print("Usage: /su flag <name> [reason], or target the player first.")
+        ns.Print('Usage: /su flag <name> [reason], or target the player first. Put names with a space in quotes: /su flag "First Last" reason')
         return
     end
-    ns.FlagPlayer(key, {
-        name = display, guildKey = gk, guild = gn, kind = "manual", summons = 0, source = "you",
-        reason = (reason ~= "" and reason) or nil, zone = GetRealZoneText and GetRealZoneText() or nil,
-    })
+    ns.FlagByHand(key, display, gk, gn, reason)
 end
 
 function ns.SlashFlagGuild(rest)
@@ -355,13 +447,18 @@ function ns.SlashFlagGuild(rest)
         ns.Print("Usage: /su flagguild <guild name>, or target a member of the guild.")
         return
     end
-    ns.FlagGuild(gk, { name = gn, kind = "manual", summons = 0, source = "you" })
+    ns.FlagGuildByHand(gk, gn)
 end
 
 function ns.SlashUnflag(rest)
     local key, display = resolvePlayer(rest)
-    if key and ns.UnflagPlayer(key) then
-        ns.Print("Removed your flag on " .. display .. ".")
+    local many
+    if key and not rest:find("-", 1, true) then key, many = onAnyRealm(ns.db.players, key, PLAYER_NAME) end
+    local rec = key and ns.db.players[key]
+    if rec and ns.UnflagPlayer(key) then
+        ns.Print("Removed your flag on " .. (rec.name or display) .. ".")
+    elseif many then
+        ns.Print("You flagged that name on more than one realm. Add the realm: /su unflag Name-Realm")
     else
         ns.Print("You haven't flagged that player.")
     end
@@ -369,8 +466,13 @@ end
 
 function ns.SlashUnflagGuild(rest)
     local gk, gn = resolveGuild(rest)
-    if gk and ns.UnflagGuild(gk) then
-        ns.Print("Removed your flag on <" .. gn .. ">.")
+    local many
+    if gk and not rest:find("@", 1, true) then gk, many = onAnyRealm(ns.db.guilds, gk, GUILD_NAME) end
+    local rec = gk and ns.db.guilds[gk]
+    if rec and ns.UnflagGuild(gk) then
+        ns.Print("Removed your flag on <" .. (rec.name or gn) .. ">.")
+    elseif many then
+        ns.Print("You flagged that guild name on more than one realm. Add the realm: /su unflagguild Guild@Realm")
     else
         ns.Print("You haven't flagged that guild.")
     end
@@ -382,9 +484,15 @@ function ns.SlashCheck(rest)
         ns.Print("Usage: /su check <name>, or target the player first.")
         return
     end
+    if not rest:find("-", 1, true) and not ns.db.players[key] and not ns.db.community.players[key] then
+        local other = onAnyRealm(ns.db.players, key, PLAYER_NAME) or onAnyRealm(ns.db.community.players, key, PLAYER_NAME)
+        if other then key, display = other, ns.DisplayName(other) end
+    end
     local s = ns.Status(key, gk)
     if s.flagged then
         ns.Print(display .. ": " .. ns.Describe(s) .. ".")
+        local classes = ns.ReporterClasses("players", key)
+        if classes then ns.Print("  Reported by: " .. classes .. ".") end
         if (s.cPlayerRelayed or 0) > 0 then
             ns.Print(("  %d of the union reports were passed on by other members rather than sent by the reporter."):format(s.cPlayerRelayed))
         end

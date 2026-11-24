@@ -107,6 +107,20 @@ local function refresh()
     for _, c in pairs(controls) do c:Refresh() end
 end
 
+StaticPopupDialogs["SUMMONERSUNION_RESET"] = {
+    text = "Put all The Summoners Union options back to their defaults? Your flags and reports are kept.",
+    button1 = "Reset",
+    button2 = "Cancel",
+    OnAccept = function()
+        ns.ResetSettings()
+        ns.Print("Options are back to their defaults.")
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 local function minutes(v) return v .. " min" end
 local function plain(v) return tostring(v) end
 local function days(v) return v == 0 and "Never" or (v .. " days") end
@@ -171,6 +185,10 @@ local function build()
     header(RIGHT_X, -352, "Your flags")
     stepper(RIGHT_X, -372, "flagExpiryDays", "Forget your flags after", { 90, 180, 365, 730, 0 }, days,
         "Forget your own (and imported) flags once they're this old. Checked when you log in or /reload, so you can change your mind first.", true)
+
+    -- not every client shows the settings window's own defaults button
+    panel.resetButton = button("Reset to defaults", 130, function() StaticPopup_Show("SUMMONERSUNION_RESET") end)
+    panel.resetButton:SetPoint("TOPLEFT", LEFT_X, -406)
 
     local list = button("Open the list", 110, function() ns.ToggleWindow() end)
     list:SetPoint("TOPLEFT", RIGHT_X, -406)

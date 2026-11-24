@@ -21,6 +21,7 @@ local function line(kind, key, r)
     return table.concat({
         kind, clean(key), clean(r.name), clean(r.guildKey), clean(r.guild),
         tostring(tonumber(r.summons) or 0), tostring(math.floor((r.when or 0) / 86400)), clean(r.kind or "manual"),
+        clean(r.class),
     }, SEP)
 end
 
@@ -54,6 +55,7 @@ function ns.ParseExport(text)
                     name = field(f[3]), guildKey = field(f[4]) and f[4]:lower(), guild = field(f[5]),
                     summons = math.max(0, math.min(tonumber(f[6]) or 0, 999)),
                     when = (tonumber(f[7]) or 0) * 86400 + 43200, kind = field(f[8]) or "manual",
+                    class = f[9] and f[9]:find("^%u+$") and #f[9] <= 12 and f[9] or nil,
                 } }
             end
         end

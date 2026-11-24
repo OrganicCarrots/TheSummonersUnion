@@ -163,6 +163,22 @@ function M.SetGroup(members)
     for i, m in ipairs(members) do M.units["party" .. i] = m end
 end
 
+-- right-click menus (the Menu api). OpenMenu builds what the addon adds to one
+M.menus = {}
+Menu = { ModifyMenu = function(tag, fn) M.menus[tag] = M.menus[tag] or {}; table.insert(M.menus[tag], fn) end }
+function M.OpenMenu(tag, context)
+    local function node(text, fn)
+        local n = { text = text, fn = fn, items = {} }
+        n.CreateButton = function(self, t, f) local c = node(t, f); table.insert(self.items, c); return c end
+        n.CreateDivider = function(self) table.insert(self.items, node("-")) end
+        n.CreateTitle = function(self, t) local c = node(t); table.insert(self.items, c); return c end
+        return n
+    end
+    local root = node("root")
+    for _, fn in ipairs(M.menus[tag] or {}) do fn(nil, root, context) end
+    return root
+end
+
 function M.Reset()
     -- keep timers, the send queue might still be waiting on one from the last test
     M.sent, M.chat, M.alerts, M.popups, M.declined, M.tooltip = {}, {}, {}, {}, 0, {}

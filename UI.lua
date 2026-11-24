@@ -95,12 +95,15 @@ local function rowText(it)
         local name = (it.bucket == "guilds" and ("<" .. (l.n or it.key) .. ">")) or (l.n or it.key)
         if it.bucket == "players" and l.gn then name = name .. " |cffaaaaaa<" .. l.gn .. ">|r" end
         local state = it.shown and "|cffff5050warning|r" or "|cff999999below threshold|r"
-        return name, ("%dx by %s, %s"):format(it.total or it.n, ns.Plural(it.n, "member"), state), ns.DayText(l.d)
+        local classes = ns.ReporterClasses(it.bucket, it.key)
+        return name, ("%dx by %s%s, %s"):format(it.total or it.n, ns.Plural(it.n, "member"),
+            classes and (" (" .. classes .. ")") or "", state), ns.DayText(l.d)
     end
     local r = it.rec
     local name = r.name or it.key
     if it.list == "guilds" then name = "<" .. name .. ">" elseif r.guild then name = name .. " |cffaaaaaa<" .. r.guild .. ">|r" end
     local what = ns.REASONS[r.kind] or r.kind or ""
+    if r.class then what = what .. " as " .. ns.ClassName(r.class) end
     if (r.summons or 0) > 0 then what = what .. ", " .. r.summons .. " summons" end
     if (r.times or 1) > 1 then what = what .. ", x" .. r.times end
     if r.source == "import" then what = what .. " (imported)" end
@@ -183,19 +186,19 @@ local function build()
 
     for i = 1, ROWS do
         local row = CreateFrame("Frame", nil, frame)
-        row:SetSize(520, ROW_H)
+        row:SetSize(604, ROW_H)
         row:SetPoint("TOPLEFT", 18, -60 - (i - 1) * ROW_H)
         row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         row.name:SetPoint("LEFT", 0, 0)
-        row.name:SetWidth(220)
+        row.name:SetWidth(190)
         row.name:SetJustifyH("LEFT")
         row.what = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        row.what:SetPoint("LEFT", 225, 0)
-        row.what:SetWidth(170)
+        row.what:SetPoint("LEFT", 195, 0)
+        row.what:SetWidth(285)
         row.what:SetJustifyH("LEFT")
         row.date = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-        row.date:SetPoint("LEFT", 400, 0)
-        row.date:SetWidth(70)
+        row.date:SetPoint("LEFT", 484, 0)
+        row.date:SetWidth(62)
         row.date:SetJustifyH("LEFT")
         row.remove = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
         row.remove:SetSize(54, 18)
@@ -246,29 +249,64 @@ local function buildBox()
     box.help:SetWidth(488)
     box.help:SetJustifyH("LEFT")
 
-    local sf = CreateFrame("ScrollFrame", "SummonersUnionIOScroll", box, "UIPanelScrollFrameTemplate")
-    sf:SetPoint("TOPLEFT", 16, -54)
-    sf:SetPoint("BOTTOMRIGHT", -34, 44)
+    -- bordered so it's clear where the text goes, and a click anywhere in it puts the cursor in the box
+    local area = CreateFrame("Frame", nil, box, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    area:SetPoint("TOPLEFT", 12, -62)
+    area:SetPoint("BOTTOMRIGHT", -12, 42)
+    if area.SetBackdrop then
+        area:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = true, tileSize = 16, edgeSize = 16, insets = { left = 4, right = 4, top = 4, bottom = 4 } })
+        area:SetBackdropColor(0, 0, 0, 0.8)
+        area:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+    end
+    area:EnableMouse(true)
+
+    local sf = CreateFrame("ScrollFrame", "SummonersUnionIOScroll", area, "UIPanelScrollFrameTemplate")
+    sf:SetPoint("TOPLEFT", 8, -8)
+    sf:SetPoint("BOTTOMRIGHT", -28, 8)
+    sf:EnableMouse(true)
     local eb = CreateFrame("EditBox", nil, sf)
     eb:SetMultiLine(true)
     eb:SetFontObject(ChatFontNormal)
-    eb:SetWidth(460)
+    eb:SetWidth(450)
     eb:SetAutoFocus(false)
     eb:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     sf:SetScrollChild(eb)
     box.edit = eb
 
+    box.hint = area:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+    box.hint:SetPoint("CENTER")
+    box.hint:SetText("Click here, then press Ctrl+V to paste")
+    local function updateHint()
+        if eb:GetText() == "" then box.hint:Show() else box.hint:Hide() end
+    end
+    box.updateHint = updateHint
+    eb:SetScript("OnTextChanged", updateHint)
+    local function focus() eb:SetFocus() end
+    area:SetScript("OnMouseDown", focus)
+    sf:SetScript("OnMouseDown", focus)
+
     box.action = button(box, "Close", 100, function() box:Hide() end)
     box.action:SetPoint("BOTTOMRIGHT", -14, 12)
+    box.second = button(box, "Copy", 100, nil)
+    box.second:SetPoint("RIGHT", box.action, "LEFT", -6, 0)
 end
 
+-- addons can't touch the clipboard, so copy and paste just get the box ready for ctrl+c / ctrl+v
 function ns.ShowExport()
     if not box then buildBox() end
     box.title:SetText("Export your flags")
     box.help:SetText("Press Ctrl+C to copy, then share it. Others paste it into /su import. Imported flags stay theirs to remove.")
     box.edit:SetText(ns.Export(ns.db))
+    box.updateHint()
     box.action:SetText("Close")
     box.action:SetScript("OnClick", function() box:Hide() end)
+    box.second:SetText("Copy")
+    box.second:SetScript("OnClick", function()
+        box.edit:SetFocus()
+        box.edit:HighlightText()
+        box.help:SetText("All selected. Press Ctrl+C now to copy it.")
+    end)
     box:Show()
     box.edit:SetFocus()
     box.edit:HighlightText()
@@ -279,6 +317,14 @@ function ns.ShowImport()
     box.title:SetText("Import flags")
     box.help:SetText("Paste a Summoners Union export below (Ctrl+V), then press Import. Flags you already have are kept as they are.")
     box.edit:SetText("")
+    box.updateHint()
+    box.second:SetText("Paste")
+    box.second:SetScript("OnClick", function()
+        box.edit:SetText("")
+        box.updateHint()
+        box.edit:SetFocus()
+        box.help:SetText("Ready. Press Ctrl+V now to paste, then press Import.")
+    end)
     box.action:SetText("Import")
     box.action:SetScript("OnClick", function()
         local ok, res = ns.ImportText(box.edit:GetText())

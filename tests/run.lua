@@ -267,6 +267,7 @@ test("export round-trips and rejects tampering", function()
     eq(res.guilds, 1, "guilds imported")
     eq(fresh.players["badlead-whitemane"].summons, 3, "summons kept")
     eq(fresh.players["badlead-whitemane"].source, "import", "marked as imported")
+    eq(fresh.players["badlead-whitemane"].class, "WARLOCK", "class kept")
     local _, again = ns.ImportText(text)
     eq(again.skipped, 2, "re-import skips existing")
 end)
@@ -287,6 +288,125 @@ test("slash commands flag, check and unflag", function()
     eq(ns.db.settings.summonWindowMinutes, 45, "setting changed")
     ns.Slash("share channel off")
     eq(ns.db.settings.shareChannel, false, "share setting")
+end)
+
+test("names with a space work in the commands", function()
+    eq(ns.PlayerKey("first  last"), "first last-whitemane", "two word key")
+    eq(select(2, ns.PlayerKey("first last")), "First Last-Whitemane", "both words capitalized")
+    ns.Slash('flag "First Last" took the summons')
+    eq(ns.db.players["first last-whitemane"].reason, "took the summons", "quoted name")
+    ns.Slash("check first last")
+    ok(table.concat(M.chat, "\n"):find("First Last-Whitemane: you flagged them", 1, true), "check takes the whole name")
+    ns.Slash("unflag First Last")
+    eq(ns.db.players["first last-whitemane"], nil, "unflag takes the whole name")
+
+    M.SetGroup({ { name = "Some Body" } })
+    ns.Slash("flag Some Body left right after")
+    eq(ns.db.players["some body-whitemane"].reason, "left right after", "names we know are matched")
+    M.SetGroup(nil)
+
+    GetBuildInfo = function() return "1.60.1", "71091", "", 16001 end
+    ns.Slash("flag Never Seen ran off")
+    GetBuildInfo = nil
+    eq(ns.db.players["never seen-whitemane"].reason, "ran off", "two word names on wow forever")
+    ns.Slash("flag Bob ran off")
+    eq(ns.db.players["bob-whitemane"].reason, "ran off", "one word names elsewhere")
+end)
+
+test("unflag by name finds a flag made from a target on another realm", function()
+    M.units.target = { name = "Farlead", realm = "Faerlina", guild = "Far Guild" }
+    ns.Slash("flag")
+    ns.Slash("flagguild")
+    ok(ns.db.players["farlead-faerlina"], "flagged from the target")
+    ok(ns.db.guilds["far guild@faerlina"], "guild flagged from the target")
+    M.units.target = nil
+    ns.Slash("unflagguild Far Guild")
+    eq(ns.db.guilds["far guild@faerlina"], nil, "guild unflagged by name")
+    ns.Slash("unflag farlead")
+    eq(ns.db.players["farlead-faerlina"], nil, "player unflagged by name")
+
+    ns.FlagPlayer("twin-faerlina", { name = "Twin-Faerlina", kind = "manual", source = "you" }, true)
+    ns.FlagPlayer("twin-mankrik", { name = "Twin-Mankrik", kind = "manual", source = "you" }, true)
+    ns.Slash("unflag twin")
+    ok(ns.db.players["twin-faerlina"] and ns.db.players["twin-mankrik"], "nothing removed when it's on two realms")
+    ok(M.chat[#M.chat]:find("more than one realm", 1, true), "asks for the realm")
+    ns.Slash("unflag Twin-Mankrik")
+    eq(ns.db.players["twin-mankrik"], nil, "the realm picks one")
+end)
+
+test("reports say which class the reporter was", function()
+    local function report(sender, class)
+        local msg = ns.EncodeFlag("P", "badlead-whitemane", { name = "Badlead-Whitemane", kind = "manual", when = time(), class = class })
+        M.Fire("CHAT_MSG_ADDON", "SUMUNION", msg, "CHANNEL", sender)
+    end
+    report("Lock-Faerlina", "WARLOCK")
+    report("Oldversion-Mankrik", nil)
+    report("Healer-Mankrik", "PRIEST")
+    local reports = ns.db.community.players["badlead-whitemane"]
+    eq(reports["lock-faerlina"].cl, "WARLOCK", "class stored")
+    eq(reports["oldversion-mankrik"].cl, nil, "older versions send no class")
+    eq(ns.ReporterClasses("players", "badlead-whitemane"), "1 warlock, 1 priest", "warlocks first")
+    ns.Slash("check Badlead")
+    ok(table.concat(M.chat, "\n"):find("Reported by: 1 warlock, 1 priest.", 1, true), "check lists the classes")
+
+    local passed
+    for _, text in ipairs(ns.SyncMessages(0, nil, "asker-whitemane")) do
+        for _, m in ipairs(ns.DecodeMessages(text)) do
+            if m.reporter == "lock-faerlina" then passed = m.class end
+        end
+    end
+    eq(passed, "WARLOCK", "passed-on reports keep the class")
+    ns.FlagPlayer("other-whitemane", { name = "Other-Whitemane", kind = "manual", source = "you" }, true)
+    eq(ns.db.players["other-whitemane"].class, "WARLOCK", "your own flags remember your class")
+end)
+
+test("the reset button in the options asks first, then restores the defaults", function()
+    local _, panel = ns.OptionControls()
+    ns.Slash("set autodecline on")
+    panel.resetButton.scripts.OnClick(panel.resetButton)
+    eq(M.popups[#M.popups].which, "SUMMONERSUNION_RESET", "asks first")
+    eq(ns.db.settings.autoDecline, true, "nothing changes before you confirm")
+    StaticPopupDialogs.SUMMONERSUNION_RESET.OnAccept()
+    eq(ns.db.settings.autoDecline, false, "defaults back")
+end)
+
+test("the import box has a paste button and a hint until there's text", function()
+    ns.Slash("import")
+    local box = _G.SummonersUnionIO
+    eq(box.second.text, "Paste", "paste button")
+    ok(box.hint.shown, "hint while empty")
+    box.edit:SetText("something")
+    box.edit.scripts.OnTextChanged(box.edit)
+    ok(not box.hint.shown, "hint goes once there's text")
+    box.second.scripts.OnClick(box.second)
+    eq(box.edit:GetText(), "", "paste clears the box first")
+    ns.Slash("export")
+    eq(box.second.text, "Copy", "copy button on export")
+    ok(not box.hint.shown, "no hint over the export")
+end)
+
+test("the right-click menu flags and unflags a player and their guild", function()
+    M.units.target = { name = "Badlead", guild = "Greedy Raiders" }
+    local function entries()
+        local root = M.OpenMenu("MENU_UNIT_PLAYER", { unit = "target" })
+        local sub = root.items[#root.items]
+        eq(sub.text, "The Summoners Union", "our submenu")
+        local out = {}
+        for _, e in ipairs(sub.items) do out[e.text] = e end
+        return out
+    end
+    local e = entries()
+    e["Flag Badlead"].fn()
+    ok(ns.db.players["badlead-whitemane"], "player flagged")
+    e["Flag guild <Greedy Raiders>"].fn()
+    ok(ns.db.guilds["greedy raiders@whitemane"], "guild flagged")
+    e = entries()
+    e["Unflag Badlead"].fn()
+    eq(ns.db.players["badlead-whitemane"], nil, "player unflagged")
+    e["Unflag guild <Greedy Raiders>"].fn()
+    eq(ns.db.guilds["greedy raiders@whitemane"], nil, "guild unflagged")
+    eq(#M.OpenMenu("MENU_UNIT_PLAYER", { unit = "player" }).items, 0, "nothing on yourself")
+    eq(#M.OpenMenu("MENU_UNIT_FRIEND", { name = "Chatter", server = "Faerlina" }).items[2].items, 1, "chat names get the player entry")
 end)
 
 test("windows build and refresh without errors", function()

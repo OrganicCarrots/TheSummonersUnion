@@ -20,3 +20,4 @@ Tooltip.lua
 UI.lua
 Options.lua
 Minimap.lua
+Menu.lua

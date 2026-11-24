@@ -17,7 +17,8 @@ shares flags with other people running the addon.
   flagged guild. It tells you how many times they've been flagged and by how many people,
   e.g. "flagged 6 times by 4 union members". Optional auto-decline (off by default).
 - Red line on flagged players' tooltips.
-- `/su flag` and `/su flagguild` to flag someone by hand. Works on any class.
+- Flag someone by hand with `/su flag` and `/su flagguild`, or right-click their portrait (or
+  party/raid frame) and use The Summoners Union entry. Works on any class.
 - Flags get shared with other users in your guild and group through hidden addon messages,
   dungeon finder groups included. There's also a hidden union channel for everyone on your
   realm. It's opt-in, but joining it gives the best results, since reports then reach every
@@ -28,6 +29,8 @@ shares flags with other people running the addon.
   New reports are also passed on as they happen: when you get one you haven't seen, your
   addon sends it to your other channels a few seconds later, so it reaches everyone online
   quickly. People who are offline get it from the next sync.
+- Reports show what class the person who filed them was playing, so you can tell a warlock
+  who actually got summon-kicked from someone flagging by hand.
 - Export/import your list as text to pass it to friends or your guild.
 - Options panel under Options > AddOns (or `/su options`) and a minimap button. Left click
   opens the list, right click opens the options.
@@ -36,9 +39,9 @@ shares flags with other people running the addon.
 
 | Command | What it does |
 |---|---|
-| `/su` | Open the list (your players, your guilds, community reports) |
+| `/su` | Open the list (everything, your players, your guilds, community reports) |
 | `/su options` | Open the options panel |
-| `/su flag [name] [reason]` | Flag a player (your target if you don't give a name) |
+| `/su flag [name] [reason]` | Flag a player (your target if you don't give a name). Names with a space can go in quotes: `/su flag "First Last" reason` |
 | `/su flagguild [guild]` | Flag a guild (your target's guild if you don't give one) |
 | `/su unflag <name>`, `/su unflagguild <guild>` | Remove your flag |
 | `/su check [name]` | Look someone up |

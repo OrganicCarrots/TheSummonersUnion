@@ -118,6 +118,7 @@ end)
 ns.On("PLAYER_LOGIN", function()
     ns.playerKey, ns.playerName = ns.UnitKey("player")
     local _, class = UnitClass("player")
+    ns.playerClass = class
     ns.isWarlock = (class == "WARLOCK")
     for i = 1, #readyFns do
         local ok, err = pcall(readyFns[i])
@@ -152,13 +153,16 @@ local function normRealm(realm)
 end
 ns.NormRealm = normRealm
 
+-- capitalize each part, wow forever names are two words
+local function capitalize(s) return (s:gsub("^%l", string.upper):gsub(" %l", string.upper)) end
+
 -- "Name", "Name-Realm" or ("Name", "Realm") -> key "name-realm" plus display name "Name-Realm"
 function ns.PlayerKey(name, realm)
-    name = trim(name)
+    name = trim(name):gsub("%s+", " ")
     if name == "" then return nil end
     local n, r = name:match("^([^%-]+)%-(.+)$")
-    if n then name, realm = n, r end
-    name = name:gsub("^%l", string.upper)
+    if n then name, realm = trim(n), r end
+    name = capitalize(name)
     realm = normRealm(realm)
     return (name .. "-" .. realm):lower(), name .. "-" .. realm
 end
@@ -167,7 +171,7 @@ end
 function ns.DisplayName(key)
     local n, r = tostring(key or ""):match("^([^%-]+)%-(.+)$")
     if not n then return key end
-    return (n:gsub("^%l", string.upper)) .. "-" .. (r:gsub("^%l", string.upper))
+    return capitalize(n) .. "-" .. (r:gsub("^%l", string.upper))
 end
 
 -- guild names are unique per realm, key is "guild name@realm"

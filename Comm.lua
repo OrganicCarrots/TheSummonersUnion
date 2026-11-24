@@ -1,20 +1,20 @@
 -- comm: share flags with other users over addon messages (never visible chat)
 --
 -- live messages, sent as they happen:
---   1~F~P~Name-Realm~Guild@Realm~summons~day~reason~count   sender flagged a player
---   1~F~G~Guild@Realm~~summons~day~reason~count              sender flagged a guild
+--   1~F~P~Name-Realm~Guild@Realm~summons~day~reason~count~class   sender flagged a player
+--   1~F~G~Guild@Realm~~summons~day~reason~count~class              sender flagged a guild
 --   1~X~P|G~Name-Realm|Guild@Realm~day                       sender withdrew their flag
 --   1~Q~sinceDay                                             send me what you have since then
 --
 -- answers to Q pack several records into one message, separated by ^
 --   1~B~record^record^...
 -- records are F and X as above (without the leading 1~) plus relayed ones:
---   R~P|G~who~guild~summons~day~reason~count~reporter        someone else's flag, passed on
+--   R~P|G~who~guild~summons~day~reason~count~reporter~class  someone else's flag, passed on
 --   Y~P|G~who~reporter~day                                   someone else's retraction, passed on
 --
 -- one entry per reporter per key so nobody can stack votes. relayed entries remember who
 -- passed them on, and nobody can fill more than a set number of slots either way.
--- the count field is optional, a flag without one counts once
+-- count and class are optional (older versions don't send them), a flag without a count counts once
 local _, ns = ...
 
 local PREFIX = "SUMUNION"
@@ -42,6 +42,7 @@ end
 local function dayOf(t) return math.floor((t or time()) / 86400) end
 local function countOf(n) return math.max(1, math.min(math.floor(tonumber(n) or 1), ns.LIMITS.countCap)) end
 local function bucketOf(kind) return kind == "P" and "players" or "guilds" end
+local function classOf(s) if type(s) == "string" and #s <= 12 and s:find("^%u+$") then return s end end
 function ns.RecordId(kind, key, reporter) return kind .. "|" .. key .. "|" .. reporter end
 
 local function guildField(guildKey, guild)
@@ -64,7 +65,7 @@ local function ownRecord(kind, key, rec)
     return table.concat({
         "F", kind, who(kind, key, rec.name), kind == "P" and guildField(rec.guildKey, rec.guild) or "",
         tostring(math.min(tonumber(rec.summons) or 0, 99)), tostring(dayOf(rec.when)),
-        clean(rec.kind or "manual", 10), tostring(countOf(rec.times)),
+        clean(rec.kind or "manual", 10), tostring(countOf(rec.times)), classOf(rec.class) or "",
     }, SEP)
 end
 
@@ -72,7 +73,7 @@ local function relayRecord(kind, key, reporter, r)
     return table.concat({
         "R", kind, who(kind, key, r.n), kind == "P" and guildField(r.g, r.gn) or "",
         tostring(math.min(tonumber(r.s) or 0, 99)), tostring(r.d or ns.Today()),
-        clean(r.r or "manual", 10), tostring(countOf(r.c)), clean(reporter, 64),
+        clean(r.r or "manual", 10), tostring(countOf(r.c)), clean(reporter, 64), classOf(r.cl) or "",
     }, SEP)
 end
 
@@ -116,9 +117,11 @@ local function decodeRecord(f)
         day = f[6]
         m.reason = (f[7] ~= nil and f[7] ~= "") and f[7] or "manual"
         m.count = countOf(f[8])
+        m.class = classOf(f[9])
         if t == "R" then
             m.reporter = reporterKey(f[9])
             if not m.reporter then return nil end
+            m.class = classOf(f[10])
         end
     elseif t == "X" then
         day = f[4]
@@ -269,7 +272,7 @@ local function putReport(bucket, m, reporter, via, relayer)
     if newRelayer then db.relayCounts[relayer] = (db.relayCounts[relayer] or 0) + 1 end
     all[m.key] = all[m.key] or {}
     all[m.key][reporter] = { n = m.name, g = m.guildKey, gn = m.guild, s = m.summons, d = m.day, r = m.reason,
-                             c = m.count or 1, via = via, rl = relayer }
+                             c = m.count or 1, via = via, rl = relayer, cl = m.class }
     return true
 end
 
