@@ -188,17 +188,19 @@ local function build()
         "When you get a report you haven't seen, pass it on to your other channels a few seconds later, so new reports reach everyone online quickly.")
 
     header(RIGHT_X, -208, "Community reports")
-    stepper(RIGHT_X, -228, "communityThreshold", "Reporters needed", { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, plain,
-        "How many different union members must report the same player before you're warned about them. Everything one person passes on counts as one.")
-    checkbox(RIGHT_X, -256, "trustGuildmates", "One guildmate's report is enough",
-        "Count a report from your own guild as enough on its own, whatever the number above.")
-    checkbox(RIGHT_X, -282, "acceptRelays", "Count reports passed on by others",
-        "Members pass on reports they got from other members, so the list fills in on its own. These can't be checked, so everything one person passes on counts as one toward the number above, and /su distrust drops everything they filed or passed on.")
-    stepper(RIGHT_X, -312, "communityExpiryDays", "Forget reports after", { 30, 60, 90, 180, 365, 0 }, days,
+    stepper(RIGHT_X, -228, "communityThreshold", "Reporters you know", { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, plain,
+        "How many people you know must report the same player before you're warned about them. People you know: your guild, your group, or anyone you've grouped with in the last 30 days. Everything one person passes on counts as one.")
+    stepper(RIGHT_X, -256, "strangerThreshold", "Or reporters in all", { 1, 2, 3, 4, 5, 6, 8, 10, 15, 20 }, plain,
+        "How many people in all must report the same player when some of them are strangers, like people on the union channel you've never played with. Nobody can check who really grouped with whom, so this stops a few made-up characters from getting someone flagged.")
+    checkbox(RIGHT_X, -284, "trustGuildmates", "One guildmate's report is enough",
+        "Count a report from your own guild as enough on its own, whatever the numbers above.")
+    checkbox(RIGHT_X, -310, "acceptRelays", "Count reports passed on by others",
+        "Members pass on reports they got from other members, so the list fills in on its own. These can't be checked, so everything one person passes on counts as one toward the numbers above, and /su distrust drops everything they filed or passed on.")
+    stepper(RIGHT_X, -340, "communityExpiryDays", "Forget reports after", { 30, 60, 90, 180, 365, 0 }, days,
         "Reports from other members stop counting once they're this old, and are cleared out when you log in.", true)
 
-    header(RIGHT_X, -352, "Your flags")
-    stepper(RIGHT_X, -372, "flagExpiryDays", "Forget your flags after", { 90, 180, 365, 730, 0 }, days,
+    header(RIGHT_X, -376, "Your flags")
+    stepper(RIGHT_X, -396, "flagExpiryDays", "Forget your flags after", { 90, 180, 365, 730, 0 }, days,
         "Forget your own (and imported) flags once they're this old. Checked when you log in or /reload, so you can change your mind first.", true)
 
     -- not every client shows the settings window's own defaults button
@@ -210,7 +212,7 @@ local function build()
         "Throws away every report other players sent you, in case bad ones got in. Your own flags stay. /su purge has more options.")
 
     local list = button("Open the list", 110, function() ns.ToggleWindow() end)
-    list:SetPoint("TOPLEFT", RIGHT_X, -406)
+    list:SetPoint("TOPLEFT", RIGHT_X, -434)
     local export = button("Export", 80, function() ns.ShowExport() end)
     export:SetPoint("LEFT", list, "RIGHT", 6, 0)
     local import = button("Import", 80, function() ns.ShowImport() end)

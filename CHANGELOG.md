@@ -18,6 +18,11 @@
   - everything one person passes on counts as one source now, whoever it says it's from
   - a passed-on withdrawal only counts if it comes from whoever passed you that report
   - reports remember when and where they arrived
+  - reports from strangers need more people now: you're warned once 2 people you know
+    (your guild, your group, anyone you've grouped with in the last 30 days) report
+    someone, or 4 people in all. Nobody can check who really grouped with whom, so this
+    keeps a few made-up characters on the channel from getting someone flagged. Change it
+    in the options or with `/su set threshold` and `/su set strangers`
 - The reason you give when flagging someone (or who you summoned, from the kick popup) shows
   next to your flags in the list, with the full text on hover. Turn it off in the options
   or with `/su set reasons off`. `/su check` shows it too

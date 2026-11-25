@@ -132,8 +132,8 @@ local function refresh()
         end
     end
     local communityN = ns.Count(ns.db.community.players) + ns.Count(ns.db.community.guilds)
-    frame.summary:SetText(("Your flags: %d players, %d guilds   Community reports: %d   Threshold: %d"):format(
-        ns.Count(ns.db.players), ns.Count(ns.db.guilds), communityN, ns.db.settings.communityThreshold))
+    frame.summary:SetText(("Your flags: %d players, %d guilds   Community reports: %d"):format(
+        ns.Count(ns.db.players), ns.Count(ns.db.guilds), communityN))
     frame.page:SetText(#items > ROWS and ("%d-%d of %d, scroll for more"):format(offset + 1, math.min(offset + ROWS, #items), #items)
         or (#items == 0 and "Nothing here yet." or ""))
 end

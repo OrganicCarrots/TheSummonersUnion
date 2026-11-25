@@ -19,6 +19,7 @@ local function test(name, fn)
     M.Reset()
     ns.ResetSync()
     SummonersUnionDB = ns.ApplyDefaults({}, ns.DEFAULTS)
+    SummonersUnionDB.settings.strangerThreshold = 2 -- most tests are older than this setting, the strangers tests set it back
     ns.db = SummonersUnionDB
     local ok, err = pcall(fn)
     if ok then passed = passed + 1; print("PASS  " .. name)
@@ -968,6 +969,29 @@ test("passed-on reports count as whoever passed them on, even under real people'
     eq(s.flagged, false, "one person passing them on is one source, even with names we've heard from")
     hear(relayMsg("dana-faerlina"), "GUILD", "Relayer-Whitemane")
     eq(ns.Status("badlead-whitemane").flagged, true, "a second person passing one on makes two")
+end)
+
+test("strangers need more reporters than people you know", function()
+    ns.db.settings.strangerThreshold = 4
+    for i = 1, 3 do hear(flagMsg(0), "CHANNEL", ("Alt%s-Faerlina"):format(string.char(96 + i))) end
+    eq(ns.Status("badlead-whitemane").flagged, false, "three strangers on the channel aren't enough")
+    hear(flagMsg(0), "CHANNEL", "Altd-Faerlina")
+    eq(ns.Status("badlead-whitemane").flagged, true, "four are")
+end)
+
+test("two people you know are enough", function()
+    ns.db.settings.strangerThreshold = 4
+    ns.db.settings.trustGuildmates = false
+    ns.NoteGrouped("friend-faerlina")
+    hear(flagMsg(0), "CHANNEL", "Friend-Faerlina")
+    hear(flagMsg(0), "CHANNEL", "Stranger-Faerlina")
+    eq(ns.Status("badlead-whitemane").flagged, false, "one person you know and one stranger isn't enough")
+    hear(flagMsg(0), "GUILD", "Guildie-Whitemane")
+    eq(ns.Status("badlead-whitemane").flagged, true, "a second person you know is")
+    ns.Slash("set strangers 3")
+    eq(ns.db.settings.strangerThreshold, 3, "/su set strangers")
+    local controls = ns.OptionControls()
+    ok(controls.strangerThreshold, "it's in the options")
 end)
 
 test("purge clears other people's reports and keeps your own flags", function()

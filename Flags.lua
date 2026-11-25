@@ -100,11 +100,15 @@ end
 -- returns: members who reported it, whether that's enough to warn, newest report,
 -- total grievances, and how many of the reports were relayed.
 -- the threshold counts sources, not reports. everything one person passes on counts as
--- them, whoever it claims to be from, so making up or borrowing names doesn't help
+-- them, whoever it claims to be from, so making up or borrowing names doesn't help.
+-- nobody can check who really grouped with whom, so strangers need more sources: a
+-- source you know came through your guild or group, or you've grouped with them lately
+local KNOWN_CHANNELS = { GUILD = true, PARTY = true, RAID = true, INSTANCE_CHAT = true }
+
 function ns.Community(bucket, key)
     local reports = key and ns.db.community[bucket][key]
     local n, total, relayed, trusted, latest = 0, 0, 0, false, nil
-    local sources, nSources = {}, 0
+    local sources = {}
     if reports then
         local cap = ns.LIMITS.countCap
         for reporter, r in pairs(reports) do
@@ -113,13 +117,19 @@ function ns.Community(bucket, key)
                 total = total + math.min(r.c or 1, cap)
                 if r.rl then relayed = relayed + 1 end
                 local src = r.rl or reporter
-                if not sources[src] then sources[src], nSources = true, nSources + 1 end
+                sources[src] = sources[src] or KNOWN_CHANNELS[r.ch or r.via] or ns.db.seen[src] ~= nil
                 if r.via == "GUILD" and not r.rl and ns.db.settings.trustGuildmates then trusted = true end
                 if not latest or (r.d or 0) > (latest.d or 0) then latest = r end
             end
         end
     end
-    local shown = n > 0 and (nSources >= ns.db.settings.communityThreshold or trusted)
+    local nSources, nKnown = 0, 0
+    for _, known in pairs(sources) do
+        nSources = nSources + 1
+        if known then nKnown = nKnown + 1 end
+    end
+    local st = ns.db.settings
+    local shown = n > 0 and (trusted or nKnown >= st.communityThreshold or nSources >= st.strangerThreshold)
     return n, shown, latest, total, relayed
 end
 
@@ -450,8 +460,8 @@ function ns.SlashCheck(rest)
         end
         if s.player and s.player.private then ns.Print("  Your flag on them is private (you hadn't grouped with them).") end
     elseif (s.cPlayer or 0) > 0 or (s.cGuild or 0) > 0 then
-        ns.Print(("%s: %d report(s) on them and %d on their guild, below your threshold of %d."):format(
-            display, s.cPlayer or 0, s.cGuild or 0, ns.db.settings.communityThreshold))
+        ns.Print(("%s: %d report(s) on them and %d on their guild, not enough yet (%d people you know, or %d in all)."):format(
+            display, s.cPlayer or 0, s.cGuild or 0, ns.db.settings.communityThreshold, ns.db.settings.strangerThreshold))
     else
         ns.Print(display .. " isn't flagged.")
     end

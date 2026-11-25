@@ -52,7 +52,8 @@ shares flags with other people running the addon.
 | `/su purge all\|channel\|relays\|since <hours>` | Clear reports from other people (all, only from the union channel, only passed-on ones, or only recent ones). Your own flags stay |
 | `/su set window <minutes>` | How soon after your last summon a kick counts (default 20) |
 | `/su set minsummons <n>` | Summons needed before a kick counts (default 1) |
-| `/su set threshold <n>` | How many people need to report someone before you see it (default 2) |
+| `/su set threshold <n>` | How many people you know need to report someone before you see it (default 2) |
+| `/su set strangers <n>` | ...or how many people in all, counting ones you don't know (default 4) |
 | `/su set autodecline on\|off` | Decline invites from flagged players |
 | `/su set relays on\|off` | Count reports other people pass on, not just first hand ones (default on) |
 | `/su set forward on\|off` | Pass new reports on to your other channels (default on) |
@@ -71,8 +72,12 @@ A shared list is only useful if people can't spam it, so:
   private: it still warns you, but nobody else sees it.
 - Anyone who files more than 10 new reports in one day gets ignored automatically. You get
   a message, and `/su trust <name>` undoes it.
-- Someone else's report only warns you once 2 different sources have reported the same
-  player (`/su set threshold`). Everyone who reported directly is one source, and
+- Someone else's report only warns you once 2 people you know have reported the same
+  player, or 4 people in all (`/su set threshold`, `/su set strangers`). People you know
+  are your guild, your group, and anyone you've grouped with in the last 30 days. The
+  grouped-with rule above only runs on the sender's side and nobody can check it, so
+  strangers on the union channel need more reports. Everyone who reported directly is one
+  source, and
   everything one person passes on counts as that one person, whoever it says it's from.
   One first hand report from a guildmate is enough, unless you `/su set trustguild off`.
 - If someone passes on a report in your name that you never made, your addon withdraws it
