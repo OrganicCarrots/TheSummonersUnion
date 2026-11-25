@@ -190,7 +190,7 @@ local function build()
     header(RIGHT_X, -208, "Community reports")
     stepper(RIGHT_X, -228, "communityThreshold", "Reporters you know", { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, plain,
         "How many people you know must report the same player before you're warned about them. People you know: your guild, your group, or anyone you've grouped with in the last 30 days. Everything one person passes on counts as one.")
-    stepper(RIGHT_X, -256, "strangerThreshold", "Or reporters in all", { 1, 2, 3, 4, 5, 6, 8, 10, 15, 20 }, plain,
+    stepper(RIGHT_X, -256, "strangerThreshold", "Reports From Strangers", { 1, 2, 3, 4, 5, 6, 8, 10, 15, 20 }, plain,
         "How many people in all must report the same player when some of them are strangers, like people on the union channel you've never played with. Nobody can check who really grouped with whom, so this stops a few made-up characters from getting someone flagged.")
     checkbox(RIGHT_X, -284, "trustGuildmates", "One guildmate's report is enough",
         "Count a report from your own guild as enough on its own, whatever the numbers above.")
