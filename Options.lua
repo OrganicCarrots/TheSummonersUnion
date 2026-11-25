@@ -173,6 +173,8 @@ local function build()
     header(LEFT_X, -326, "Display")
     checkbox(LEFT_X, -346, "showMinimap", "Show the minimap button",
         "Left-click the button for the list, right-click for these options, drag it to move it. On Retail the addon is also in the AddOns menu by the minimap.")
+    checkbox(LEFT_X, -372, "showReasons", "Show your reasons in the list",
+        "Show the reason you gave (or who you summoned) next to your own flags in the list. Hover over a row to read it in full.")
 
     -- right column
     header(RIGHT_X, -70, "Sharing")

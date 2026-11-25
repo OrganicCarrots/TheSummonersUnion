@@ -108,6 +108,8 @@ local function rowText(it)
     if (r.times or 1) > 1 then what = what .. ", x" .. r.times end
     if r.source == "import" then what = what .. " (imported)" end
     if r.private then what = what .. " (private)" end
+    local why = r.reason or r.note
+    if why and ns.db.settings.showReasons then what = what .. ' |cffaaaaaa"' .. why:gsub("|", "||") .. '"|r' end
     return name, what, ns.TimeText(r.when)
 end
 
@@ -196,6 +198,7 @@ local function build()
         row.what:SetPoint("LEFT", 195, 0)
         row.what:SetWidth(285)
         row.what:SetJustifyH("LEFT")
+        row.what:SetWordWrap(false)
         row.date = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
         row.date:SetPoint("LEFT", 484, 0)
         row.date:SetWidth(62)
@@ -209,6 +212,17 @@ local function build()
             if not it then return end
             if it.list == "players" then ns.UnflagPlayer(it.key) elseif it.list == "guilds" then ns.UnflagGuild(it.key) end
         end)
+        -- long reasons get cut off in the row, the full text is on hover
+        row:EnableMouse(true)
+        row:SetScript("OnEnter", function(self)
+            local why = self.item and self.item.rec and (self.item.rec.reason or self.item.rec.note)
+            if not why then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(self.name:GetText(), 1, 1, 1)
+            GameTooltip:AddLine((why:gsub("|", "||")), nil, nil, nil, true)
+            GameTooltip:Show()
+        end)
+        row:SetScript("OnLeave", function() GameTooltip:Hide() end)
         rows[i] = row
     end
 

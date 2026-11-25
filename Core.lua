@@ -38,6 +38,7 @@ ns.DEFAULTS = {
         communityExpiryDays = 180,  -- other members' reports stop counting after this (0 = never)
         flagExpiryDays = 0,         -- forget your own flags after this, at login (0 = never)
         showMinimap = true,
+        showReasons = true,         -- the reason you gave, next to your own flags in the list
         minimapAngle = 225,         -- degrees around the minimap, 0 = east
     },
 }
@@ -300,6 +301,7 @@ local SETTINGS = {
     relays = { "acceptRelays", "bool" },
     forward = { "forwardReports", "bool" },
     minimap = { "showMinimap", "bool" },
+    reasons = { "showReasons", "bool" },
 }
 local SETTING_NAMES = {}
 for name in pairs(SETTINGS) do SETTING_NAMES[#SETTING_NAMES + 1] = name end

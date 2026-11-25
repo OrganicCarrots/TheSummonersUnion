@@ -441,6 +441,8 @@ function ns.SlashCheck(rest)
     local s = ns.Status(key, gk)
     if s.flagged then
         ns.Print(display .. ": " .. ns.Describe(s) .. ".")
+        local why = s.player and (s.player.reason or s.player.note)
+        if why then ns.Print("  Your reason: " .. why) end
         local classes = ns.ReporterClasses("players", key)
         if classes then ns.Print("  Reported by: " .. classes .. ".") end
         if (s.cPlayerRelayed or 0) > 0 then

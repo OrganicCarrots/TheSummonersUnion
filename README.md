@@ -58,6 +58,7 @@ shares flags with other people running the addon.
 | `/su set forward on\|off` | Pass new reports on to your other channels (default on) |
 | `/su set expiry <days>` | Ignore other people's reports after this long (default 180, 0 = never) |
 | `/su set flagexpiry <days>` | Forget your own flags after this long, checked at login (default 0 = never) |
+| `/su set reasons on\|off` | Show the reasons you gave next to your flags in the list (default on) |
 | `/su minimap` | Show/hide the minimap button |
 | `/su test` | Show the kick popup without flagging anything |
 

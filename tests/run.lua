@@ -608,6 +608,21 @@ test("the list window's All tab shows your flags and community reports together"
     ok(shownRows()["<Bad Guild>"], "guilds tab still has the guild")
 end)
 
+test("your reasons show in the list unless you turn them off", function()
+    ns.FlagPlayer("badlead-whitemane", { name = "Badlead-Whitemane", kind = "manual", reason = "left after the summon", source = "you" }, true)
+    if not ns.ListWindow() then ns.ToggleWindow() end
+    local frame, rows, tabs = ns.ListWindow()
+    if not frame:IsShown() then frame:Show() end
+    tabs.players.scripts.OnClick(tabs.players)
+    ok(rows[1].what.text:find("left after the summon", 1, true), "reason shown")
+    rows[1].scripts.OnEnter(rows[1])
+    ok(table.concat(M.tooltip, "\n"):find("left after the summon", 1, true), "full reason on hover")
+    ns.Slash("set reasons off")
+    ok(not rows[1].what.text:find("left after the summon", 1, true), "hidden when turned off")
+    ns.Slash("check Badlead")
+    ok(table.concat(M.chat, "\n"):find("Your reason: left after the summon", 1, true), "check shows it")
+end)
+
 test("the addon compartment entry opens the list and options", function()
     SummonersUnion_OnAddonCompartmentClick("TheSummonersUnion", "RightButton")
     eq(M.openedCategory, 4242, "right-click, older clients")

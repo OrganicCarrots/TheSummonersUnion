@@ -18,6 +18,9 @@
   - everything one person passes on counts as one source now, whoever it says it's from
   - a passed-on withdrawal only counts if it comes from whoever passed you that report
   - reports remember when and where they arrived
+- The reason you give when flagging someone (or who you summoned, from the kick popup) shows
+  next to your flags in the list, with the full text on hover. Turn it off in the options
+  or with `/su set reasons off`. `/su check` shows it too
 
 ## v1.0.0-beta2.2
 
