@@ -338,6 +338,15 @@ test("with no realms, names have no stray hyphen and a guild has one key", funct
         eq(display, "Bob", "no stray hyphen")
         eq(select(2, ns.PlayerKey("Kyle", "Selten")), "Kyle-Selten", "last name in the realm slot")
         eq(ns.DisplayName("bob-"), "Bob", "display name from a key")
+        eq(ns.PlayerKey("John Warcarft"), "john-warcarft", "message senders come as First Last")
+        eq(select(2, ns.PlayerKey("John Warcarft")), "John-Warcarft", "shown the same as from a target")
+        local me = ns.playerKey
+        ns.playerKey = "john-warcarft"
+        local ok3, err3 = pcall(M.Fire, "CHAT_MSG_ADDON", "SUMUNION",
+            ns.EncodeFlag("P", "bob-", { name = "Bob", kind = "kick", when = time() }), "GUILD", "John Warcarft")
+        ns.playerKey = me
+        if not ok3 then error(err3, 0) end
+        eq(ns.db.community.players["bob-"], nil, "your own message coming back is ignored")
         M.units.target = { name = "Kyle", realm = "Selten", guild = "Salty Tears" }
         M.units.party1 = { name = "Ann", realm = "Other", guild = "Salty Tears" }
         eq(ns.UnitGuild("target"), "salty tears@", "guild key ignores the last name")
@@ -363,8 +372,14 @@ test("with no realms, old per-member guild keys and stray hyphens get cleaned up
         ns.db.players["kyle-selten"] = { name = "Kyle-Selten", guildKey = "salty tears@selten" }
         ns.db.players["bob-"] = { name = "Bob-" }
         ns.db.community.guilds["salty tears@selten"] = { ["ann-other"] = { d = 1 } }
-        ns.db.community.players["bob-"] = { ["ann-other"] = { n = "Bob-", g = "salty tears@other", d = 1 } }
+        ns.db.community.players["bob-"] = { ["ann-other"] = { n = "Bob-", g = "salty tears@other", d = 1 },
+            ["kyle selten-"] = { n = "Bob-", d = 2, rl = "evil doer-" } }
+        ns.db.distrust["evil doer-"] = true
         ns.FixRealmless(ns.db)
+        local moved = ns.db.community.players["bob-"]["kyle-selten"]
+        ok(moved and not ns.db.community.players["bob-"]["kyle selten-"], "old First Last sender keys moved to First-Last")
+        eq(moved.rl, "evil-doer", "who passed it on too")
+        ok(ns.db.distrust["evil-doer"] and not ns.db.distrust["evil doer-"], "distrust follows them")
         ok(ns.db.guilds["salty tears@"] and not ns.db.guilds["salty tears@selten"], "folded into one key")
         eq(ns.db.guilds["salty tears@"].when, 200, "the newest one kept")
         eq(ns.db.players["kyle-selten"].guildKey, "salty tears@", "player's guild folded")

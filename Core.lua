@@ -160,7 +160,13 @@ function ns.PlayerKey(name, realm)
     name = trim(name)
     if name == "" then return nil end
     local n, r = name:match("^([^%-]+)%-(.*)$")
-    if n then name, realm = n, r end
+    if n then
+        name, realm = n, r
+    elseif (not realm or realm == "") and normRealm(nil) == "" then
+        -- wow forever sends "First Last" in messages, unit names put the last name in the realm slot
+        local first, last = name:match("^(%S+)%s+(.+)$")
+        if first then name, realm = first, last end
+    end
     name = name:gsub("^%l", string.upper)
     realm = normRealm(realm):gsub("^%l", string.upper)
     return (name .. "-" .. realm):lower(), realm == "" and name or (name .. "-" .. realm)
@@ -237,6 +243,31 @@ function ns.FixRealmless(db)
             if r.n then r.n = (r.n:gsub("%-$", "")) end
         end
     end
+
+    -- message senders used to be keyed "first last-", unit names give "first-last"
+    local function person(k)
+        local first, last = k:match("^(%S+) (.+)%-$")
+        return first and (first .. "-" .. last:gsub("[%s%-']", "")) or k
+    end
+    for _, bucket in ipairs({ "players", "guilds" }) do
+        for _, reports in pairs(db.community[bucket]) do
+            local moves = {}
+            for who in pairs(reports) do
+                if person(who) ~= who then moves[#moves + 1] = who end
+            end
+            for _, who in ipairs(moves) do
+                local nk, r = person(who), reports[who]
+                reports[who] = nil
+                if not reports[nk] or (reports[nk].d or 0) < (r.d or 0) then reports[nk] = r end
+            end
+            for _, r in pairs(reports) do
+                if r.rl then r.rl = person(r.rl) end
+            end
+        end
+    end
+    local distrust = {}
+    for who, v in pairs(db.distrust) do distrust[person(who)] = v end
+    db.distrust = distrust
 end
 ns.OnReady(function() if ns.HomeRealm() == "" then ns.FixRealmless(ns.db) end end)
 

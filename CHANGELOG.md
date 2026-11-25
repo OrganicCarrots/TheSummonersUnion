@@ -8,6 +8,9 @@
     it, so a guild flagged through one member didn't match the others. Guild flags from
     older versions get merged when you log in
   - flags on those names and guilds get shared properly now, and survive export/import
+  - names in messages from other players ("First Last") now match the same people seen in
+    groups or targeted (First-Last). Before, your own messages bounced back looking like
+    they came from a guildmate
 - Harder to mess with the shared list:
   - `/su purge` and a Clear community reports button in the options throw away reports
     from other people (all of them, only the union channel, only passed-on ones, or only
