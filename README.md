@@ -49,6 +49,7 @@ shares flags with other people running the addon.
 | `/su export`, `/su import` | Share your list as text |
 | `/su share guild\|group\|channel on\|off` | Where your flags get shared (`/su share channel on` recommended) |
 | `/su distrust <name>`, `/su trust <name>` | Ignore (or stop ignoring) everything from one person |
+| `/su purge all\|channel\|relays\|since <hours>` | Clear reports from other people (all, only from the union channel, only passed-on ones, or only recent ones). Your own flags stay |
 | `/su set window <minutes>` | How soon after your last summon a kick counts (default 20) |
 | `/su set minsummons <n>` | Summons needed before a kick counts (default 1) |
 | `/su set threshold <n>` | How many people need to report someone before you see it (default 2) |
@@ -70,10 +71,9 @@ A shared list is only useful if people can't spam it, so:
 - Anyone who files more than 10 new reports in one day gets ignored automatically. You get
   a message, and `/su trust <name>` undoes it.
 - Someone else's report only warns you once 2 different sources have reported the same
-  player (`/su set threshold`). Everyone who reported directly is one source. A passed-on
-  report only counts as its own source if that reporter has messaged your addon directly
-  at some point, so they're a real user. Made-up names count once per person passing them
-  on. One first hand report from a guildmate is enough, unless you `/su set trustguild off`.
+  player (`/su set threshold`). Everyone who reported directly is one source, and
+  everything one person passes on counts as that one person, whoever it says it's from.
+  One first hand report from a guildmate is enough, unless you `/su set trustguild off`.
 - If someone passes on a report in your name that you never made, your addon withdraws it
   as soon as it sees it.
 - One person counts once per player. Their count of grievances is capped at 5, one person
@@ -83,7 +83,12 @@ A shared list is only useful if people can't spam it, so:
   `/su set relays off` ignores passed-on reports altogether. Passing reports on is capped
   at 30 a minute, and spam that trips the daily limit is never passed on.
 - Removing a flag sends a retraction that spreads like the reports do, and old copies
-  can't bring it back.
+  can't bring it back. A passed-on retraction only counts if it comes from whoever passed
+  you that report.
+- If bad reports get in anyway, `/su purge` (or Clear community reports in the options)
+  throws away what other people sent you and keeps your own flags. It can also clear just
+  what came over the union channel, just passed-on reports, or just what arrived in the
+  last few hours.
 - Reports expire after 180 days. Your own flags stay until you remove them, unless you set
   `/su set flagexpiry`.
 - Nothing is ever posted in chat, flagged players are never messaged, and nobody gets told

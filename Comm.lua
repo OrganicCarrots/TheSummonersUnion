@@ -247,7 +247,8 @@ local function flooded(reporter, day)
     return true
 end
 
-local function putReport(bucket, m, reporter, via, relayer)
+-- channel is where it arrived, kept so /su purge channel can find it
+local function putReport(bucket, m, reporter, via, relayer, channel)
     local db, limits = ns.db, ns.LIMITS
     local all = db.community[bucket]
     local old = all[m.key] and all[m.key][reporter]
@@ -272,7 +273,7 @@ local function putReport(bucket, m, reporter, via, relayer)
     if newRelayer then db.relayCounts[relayer] = (db.relayCounts[relayer] or 0) + 1 end
     all[m.key] = all[m.key] or {}
     all[m.key][reporter] = { n = m.name, g = m.guildKey, gn = m.guild, s = m.summons, d = m.day, r = m.reason,
-                             c = m.count or 1, via = via, rl = relayer, cl = m.class }
+                             c = m.count or 1, via = via, rl = relayer, cl = m.class, ch = channel, at = time() }
     return true
 end
 
@@ -287,7 +288,7 @@ local function handle(sender, via, m)
         if m.type == "F" or m.type == "R" then
             if ns.ReportExpired(m.day) then return false end
             db.retracted[id] = nil
-            return putReport(bucket, m, sender, via, nil)
+            return putReport(bucket, m, sender, via, nil, via)
         end
         if (db.retracted[id] or -1) < m.day then db.retracted[id] = m.day end
         return dropReport(bucket, m.key, sender)
@@ -302,10 +303,51 @@ local function handle(sender, via, m)
         if existing and ((existing.d or 0) > m.day or ((existing.d or 0) == m.day and (existing.c or 1) >= m.count)) then
             return false
         end
-        return putReport(bucket, m, reporter, "RELAY", sender)
+        return putReport(bucket, m, reporter, "RELAY", sender, via)
     end
+    -- a passed-on withdrawal only counts from whoever passed that report to us,
+    -- otherwise anyone could quietly delete other people's reports
+    if not existing or existing.rl ~= sender then return false end
     if (db.retracted[id] or -1) < m.day then db.retracted[id] = m.day end
     return dropReport(bucket, m.key, reporter)
+end
+
+-- throw away other people's reports. your own flags are never touched
+function ns.Purge(what, hours)
+    local db, n = ns.db, 0
+    local cutoff = time() - (hours or 0) * 3600
+    for _, bucket in ipairs({ "players", "guilds" }) do
+        local drop = {}
+        for key, reports in pairs(db.community[bucket]) do
+            for reporter, r in pairs(reports) do
+                if what == "all" or (what == "channel" and (r.ch or r.via) == "CHANNEL") or (what == "relays" and r.rl)
+                    or (what == "since" and (r.at or 0) >= cutoff) then
+                    drop[#drop + 1] = { key, reporter }
+                end
+            end
+        end
+        for _, d in ipairs(drop) do
+            if dropReport(bucket, d[1], d[2]) then n = n + 1 end
+        end
+    end
+    if what == "all" then
+        -- other people's withdrawals too, in case some were fake
+        for id in pairs(db.retracted) do
+            if id:match("^%a|.-|(.+)$") ~= ns.playerKey then db.retracted[id] = nil end
+        end
+    end
+    ns.Fire("FLAGS_CHANGED")
+    return n
+end
+
+function ns.SlashPurge(rest)
+    local what, hours = rest:lower():match("^(%S*)%s*(%S*)$")
+    hours = tonumber(hours)
+    if not (what == "all" or what == "channel" or what == "relays" or (what == "since" and hours and hours > 0)) then
+        ns.Print("Usage: /su purge all | channel | relays | since <hours>. Clears reports from other people, your own flags stay.")
+        return
+    end
+    ns.Print(("Cleared %d report(s) from other people. Your own flags are untouched."):format(ns.Purge(what, hours)))
 end
 
 -- everything we know since a day, newest first, as records ready to pack
@@ -466,7 +508,6 @@ ns.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
     if not senderKey or senderKey == ns.playerKey or ns.db.distrust[senderKey] then return end
     local list = ns.DecodeMessages(text)
     if not list then return end
-    ns.db.known[senderKey] = time()
     local arrivedOn = slotOf(channel, channel == "CHANNEL" and channelId() or nil)
     local p, box = pending[arrivedOn], outbox[arrivedOn]
     local changed = false

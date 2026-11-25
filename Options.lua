@@ -121,6 +121,19 @@ StaticPopupDialogs["SUMMONERSUNION_RESET"] = {
     preferredIndex = 3,
 }
 
+StaticPopupDialogs["SUMMONERSUNION_PURGE"] = {
+    text = "Clear every report you've received from other players? Your own flags are kept.",
+    button1 = "Clear",
+    button2 = "Cancel",
+    OnAccept = function()
+        ns.Print(("Cleared %d report(s) from other people. Your own flags are untouched."):format(ns.Purge("all")))
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 local function minutes(v) return v .. " min" end
 local function plain(v) return tostring(v) end
 local function days(v) return v == 0 and "Never" or (v .. " days") end
@@ -189,6 +202,10 @@ local function build()
     -- not every client shows the settings window's own defaults button
     panel.resetButton = button("Reset to defaults", 130, function() StaticPopup_Show("SUMMONERSUNION_RESET") end)
     panel.resetButton:SetPoint("TOPLEFT", LEFT_X, -406)
+    panel.purgeButton = button("Clear community reports", 170, function() StaticPopup_Show("SUMMONERSUNION_PURGE") end)
+    panel.purgeButton:SetPoint("TOPLEFT", LEFT_X, -434)
+    tooltipFor(panel.purgeButton, "Clear community reports",
+        "Throws away every report other players sent you, in case bad ones got in. Your own flags stay. /su purge has more options.")
 
     local list = button("Open the list", 110, function() ns.ToggleWindow() end)
     list:SetPoint("TOPLEFT", RIGHT_X, -406)

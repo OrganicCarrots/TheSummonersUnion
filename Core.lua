@@ -18,7 +18,6 @@ ns.DEFAULTS = {
     filed = {},                                -- ["reporter|day"] = new reports from them that day
     seen = {},                                 -- [name-realm] = last time we were grouped with them
     seenGuilds = {},                           -- [guild@realm] = last time we grouped with a member
-    known = {},                                -- [name-realm] = last time they messaged us directly
     settings = {
         promptOnKick = true,        -- ask to flag when you are removed after summoning
         promptOnDisband = true,     -- ...or when the group is disbanded after summoning
@@ -53,7 +52,6 @@ ns.LIMITS = {
     seenDays = 30,         -- how long we remember who we grouped with
     replyRecords = 120,    -- records sent when answering a query
     forwardPerMinute = 30, -- reports we pass on per minute, the rest wait for the next sync
-    knownDays = 180,       -- how long someone who messaged us directly counts as a real reporter
     total = 5000,          -- community reports kept in all
 }
 
@@ -303,6 +301,7 @@ local HELP = {
     "/su export  |  /su import - share lists as text",
     "/su share guild|group|channel on|off - /su share channel on is recommended",
     "/su distrust <name>  |  /su trust <name> - ignore or restore a reporter",
+    "/su purge all|channel|relays|since <hours> - clear other people's reports, yours stay",
     "/su set <option> <value> - type /su set to list the options",
     "/su minimap - show or hide the minimap button",
     "/su test - preview the prompt you get after a summon-kick",
@@ -398,6 +397,8 @@ function ns.Slash(msg)
         ns.Fire("FLAGS_CHANGED")
         ns.Print(cmd == "distrust" and ("Ignoring everything %s reports or passes on."):format(display)
             or ("%s's reports count again."):format(display))
+    elseif cmd == "purge" then
+        ns.SlashPurge(rest)
     elseif cmd == "set" then
         setCommand(rest)
     elseif cmd == "minimap" then

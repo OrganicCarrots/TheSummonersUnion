@@ -8,6 +8,13 @@
     it, so a guild flagged through one member didn't match the others. Guild flags from
     older versions get merged when you log in
   - flags on those names and guilds get shared properly now, and survive export/import
+- Harder to mess with the shared list:
+  - `/su purge` and a Clear community reports button in the options throw away reports
+    from other people (all of them, only the union channel, only passed-on ones, or only
+    the last few hours) and keep your own flags
+  - everything one person passes on counts as one source now, whoever it says it's from
+  - a passed-on withdrawal only counts if it comes from whoever passed you that report
+  - reports remember when and where they arrived
 
 ## v1.0.0-beta2.2
 
