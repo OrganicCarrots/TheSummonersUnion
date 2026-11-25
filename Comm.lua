@@ -47,7 +47,7 @@ function ns.RecordId(kind, key, reporter) return kind .. "|" .. key .. "|" .. re
 
 local function guildField(guildKey, guild)
     if not guildKey then return "" end
-    local name, realm = guildKey:match("^(.-)@(.+)$")
+    local name, realm = guildKey:match("^(.-)@(.*)$")
     if not name then return "" end
     return clean((guild or name) .. "@" .. realm, 64)
 end
@@ -56,7 +56,7 @@ local function who(kind, key, name)
     if kind == "P" then
         return clean((name and name:find("-", 1, true)) and name or key, 64)
     end
-    local g, realm = key:match("^(.-)@(.+)$")
+    local g, realm = key:match("^(.-)@(.*)$")
     return clean((name or g or "") .. "@" .. (realm or ""), 64)
 end
 
@@ -88,7 +88,7 @@ function ns.EncodeQuery(sinceDay)
 end
 
 local function reporterKey(s)
-    if not s or not s:find("^[^%-]+%-[^%-]+$") then return nil end
+    if not s or not s:find("^[^%-]+%-[^%-]*$") then return nil end
     return (ns.PlayerKey(s))
 end
 
@@ -99,10 +99,10 @@ local function decodeRecord(f)
     local kind, id = f[2], f[3] or ""
     local m = { type = t, kind = kind }
     if kind == "P" then
-        if not id:find("^[^%-]+%-[^%-]+$") then return nil end
+        if not id:find("^[^%-]+%-[^%-]*$") then return nil end
         m.key, m.name = ns.PlayerKey(id)
     elseif kind == "G" then
-        local g, realm = id:match("^(.-)@(.+)$")
+        local g, realm = id:match("^(.-)@(.*)$")
         if not g or g == "" then return nil end
         m.key, m.name = ns.GuildKey(g, realm)
     else
@@ -111,7 +111,7 @@ local function decodeRecord(f)
     local today = ns.Today()
     local day
     if t == "F" or t == "R" then
-        local g, realm = (f[4] or ""):match("^(.-)@(.+)$")
+        local g, realm = (f[4] or ""):match("^(.-)@(.*)$")
         if g and g ~= "" then m.guildKey, m.guild = ns.GuildKey(g, realm) end
         m.summons = math.max(0, math.min(tonumber(f[5]) or 0, 99))
         day = f[6]

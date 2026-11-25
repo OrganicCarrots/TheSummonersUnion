@@ -323,6 +323,59 @@ test("unflagguild by name finds a guild flagged from a target on another realm",
     eq(ns.db.guilds["twins@mankrik"], nil, "the realm picks one")
 end)
 
+-- wow forever: no realms, and UnitName gives the last name in the realm slot
+local function noRealms(fn)
+    M.realm = ""
+    local ok2, err = pcall(fn)
+    M.realm = "Whitemane"
+    if not ok2 then error(err, 0) end
+end
+
+test("with no realms, names have no stray hyphen and a guild has one key", function()
+    noRealms(function()
+        local key, display = ns.PlayerKey("bob")
+        eq(key, "bob-", "key")
+        eq(display, "Bob", "no stray hyphen")
+        eq(select(2, ns.PlayerKey("Kyle", "Selten")), "Kyle-Selten", "last name in the realm slot")
+        eq(ns.DisplayName("bob-"), "Bob", "display name from a key")
+        M.units.target = { name = "Kyle", realm = "Selten", guild = "Salty Tears" }
+        M.units.party1 = { name = "Ann", realm = "Other", guild = "Salty Tears" }
+        eq(ns.UnitGuild("target"), "salty tears@", "guild key ignores the last name")
+        eq(ns.UnitGuild("party1"), "salty tears@", "same key for every member")
+        ns.Slash("flagguild Salty Tears")
+        ok(ns.db.guilds["salty tears@"], "a typed guild gets the same key")
+
+        local m = ns.DecodeMessage(ns.EncodeFlag("P", "bob-", { name = "Bob", guildKey = "salty tears@", guild = "Salty Tears", kind = "kick", when = time() }))
+        eq(m.key, "bob-", "player key survives sharing")
+        eq(m.guildKey, "salty tears@", "their guild survives sharing")
+        local g = ns.DecodeMessage(ns.EncodeFlag("G", "salty tears@", { name = "Salty Tears", kind = "kick", when = time() }))
+        eq(g.key, "salty tears@", "guild flag survives sharing")
+        ns.FlagPlayer("bob-", { name = "Bob", kind = "manual", source = "you" }, true)
+        local list = assert(ns.ParseExport(ns.Export(ns.db)))
+        eq(#list, 2, "export keeps both")
+    end)
+end)
+
+test("with no realms, old per-member guild keys and stray hyphens get cleaned up", function()
+    noRealms(function()
+        ns.db.guilds["salty tears@selten"] = { name = "Salty Tears", when = 100, source = "you" }
+        ns.db.guilds["salty tears@other"] = { name = "Salty Tears", when = 200, source = "you" }
+        ns.db.players["kyle-selten"] = { name = "Kyle-Selten", guildKey = "salty tears@selten" }
+        ns.db.players["bob-"] = { name = "Bob-" }
+        ns.db.community.guilds["salty tears@selten"] = { ["ann-other"] = { d = 1 } }
+        ns.db.community.players["bob-"] = { ["ann-other"] = { n = "Bob-", g = "salty tears@other", d = 1 } }
+        ns.FixRealmless(ns.db)
+        ok(ns.db.guilds["salty tears@"] and not ns.db.guilds["salty tears@selten"], "folded into one key")
+        eq(ns.db.guilds["salty tears@"].when, 200, "the newest one kept")
+        eq(ns.db.players["kyle-selten"].guildKey, "salty tears@", "player's guild folded")
+        eq(ns.db.players["kyle-selten"].name, "Kyle-Selten", "real last names left alone")
+        eq(ns.db.players["bob-"].name, "Bob", "stray hyphen dropped")
+        ok(ns.db.community.guilds["salty tears@"]["ann-other"], "reports folded")
+        eq(ns.db.community.players["bob-"]["ann-other"].g, "salty tears@", "report's guild folded")
+        eq(ns.db.community.players["bob-"]["ann-other"].n, "Bob", "report's name cleaned")
+    end)
+end)
+
 test("reports say which class the reporter was", function()
     local function report(sender, class)
         local msg = ns.EncodeFlag("P", "badlead-whitemane", { name = "Badlead-Whitemane", kind = "manual", when = time(), class = class })

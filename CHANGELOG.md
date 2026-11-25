@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.0.0-beta2.3
+
+- WoW Forever fixes. It has no realms, which the addon wasn't expecting:
+  - names without a last name don't show with a stray "-" anymore
+  - a guild gets one key for all its members. Before, each member's last name ended up in
+    it, so a guild flagged through one member didn't match the others. Guild flags from
+    older versions get merged when you log in
+  - flags on those names and guilds get shared properly now, and survive export/import
+
 ## v1.0.0-beta2.2
 
 - Undid the names-with-a-space change in `/su flag`, `/su check` and `/su unflag`, it made

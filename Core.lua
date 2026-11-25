@@ -153,22 +153,28 @@ local function normRealm(realm)
 end
 ns.NormRealm = normRealm
 
--- "Name", "Name-Realm" or ("Name", "Realm") -> key "name-realm" plus display name "Name-Realm"
+-- empty on wow forever, which has no realms
+function ns.HomeRealm() return normRealm(nil) end
+
+-- "Name", "Name-Realm" or ("Name", "Realm") -> key "name-realm" plus display name "Name-Realm".
+-- with no realm the key ends in "-" and the display name is just "Name"
 function ns.PlayerKey(name, realm)
     name = trim(name)
     if name == "" then return nil end
-    local n, r = name:match("^([^%-]+)%-(.+)$")
+    local n, r = name:match("^([^%-]+)%-(.*)$")
     if n then name, realm = n, r end
     name = name:gsub("^%l", string.upper)
     realm = normRealm(realm):gsub("^%l", string.upper)
-    return (name .. "-" .. realm):lower(), name .. "-" .. realm
+    return (name .. "-" .. realm):lower(), realm == "" and name or (name .. "-" .. realm)
 end
 
 -- "name-realm" key back to something readable, "Name-Realm"
 function ns.DisplayName(key)
-    local n, r = tostring(key or ""):match("^([^%-]+)%-(.+)$")
+    local n, r = tostring(key or ""):match("^([^%-]+)%-(.*)$")
     if not n then return key end
-    return (n:gsub("^%l", string.upper)) .. "-" .. (r:gsub("^%l", string.upper))
+    n = n:gsub("^%l", string.upper)
+    if r == "" then return n end
+    return n .. "-" .. (r:gsub("^%l", string.upper))
 end
 
 -- guild names are unique per realm, key is "guild name@realm"
@@ -191,12 +197,50 @@ function ns.UnitGuild(unit)
     local guild, _, _, guildRealm = GetGuildInfo(unit)
     if ns.IsSecret(guild) or ns.IsSecret(guildRealm) then return nil end
     if not guild or guild == "" then return nil end
-    if not guildRealm or guildRealm == "" then
+    if ns.HomeRealm() == "" then
+        guildRealm = nil -- wow forever has no realms, that slot holds the last name there
+    elseif not guildRealm or guildRealm == "" then
         local _, unitRealm = UnitName(unit)
         guildRealm = unitRealm
     end
     return ns.GuildKey(guild, guildRealm)
 end
+
+-- older versions on wow forever put a member's last name in guild keys, so one guild had a
+-- key per member, and names got a stray "-". fold those up
+function ns.FixRealmless(db)
+    local function fold(k) return k and (k:gsub("@.*$", "@")) end
+    local function rekey(store, merge)
+        local moves = {}
+        for k in pairs(store) do
+            if fold(k) ~= k then moves[#moves + 1] = k end
+        end
+        for _, k in ipairs(moves) do
+            local nk, v = fold(k), store[k]
+            store[k] = nil
+            store[nk] = store[nk] and merge(store[nk], v) or v
+        end
+    end
+    rekey(db.guilds, function(a, b) return (a.when or 0) >= (b.when or 0) and a or b end)
+    rekey(db.seenGuilds, math.max)
+    rekey(db.community.guilds, function(a, b)
+        for who, r in pairs(b) do
+            if not a[who] or (a[who].d or 0) < (r.d or 0) then a[who] = r end
+        end
+        return a
+    end)
+    for _, r in pairs(db.players) do
+        r.guildKey = fold(r.guildKey)
+        if r.name then r.name = (r.name:gsub("%-$", "")) end
+    end
+    for _, reports in pairs(db.community.players) do
+        for _, r in pairs(reports) do
+            r.g = fold(r.g)
+            if r.n then r.n = (r.n:gsub("%-$", "")) end
+        end
+    end
+end
+ns.OnReady(function() if ns.HomeRealm() == "" then ns.FixRealmless(ns.db) end end)
 
 -- unit tokens for the whole group, including the player
 function ns.GroupUnits()

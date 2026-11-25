@@ -49,7 +49,8 @@ function ns.ParseExport(text)
             local f = {}
             for v in (ln .. SEP):gmatch("(.-)" .. SEP) do f[#f + 1] = v end
             local kind, key = f[1], (f[2] or ""):lower()
-            local valid = (kind == "P" and key:find("^[^%-]+%-[^%-]+$")) or (kind == "G" and key:find("^.+@.+$"))
+            -- the realm part can be empty, wow forever has no realms
+            local valid = (kind == "P" and key:find("^[^%-]+%-[^%-]*$")) or (kind == "G" and key:find("^.+@.*$"))
             if valid then
                 out[#out + 1] = { kind = kind, key = key, rec = {
                     name = field(f[3]), guildKey = field(f[4]) and f[4]:lower(), guild = field(f[5]),
