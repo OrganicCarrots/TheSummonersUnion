@@ -22,7 +22,8 @@
     (your guild, your group, anyone you've grouped with in the last 30 days) report
     someone, or 4 people in all. Nobody can check who really grouped with whom, so this
     keeps a few made-up characters on the channel from getting someone flagged. Change it
-    in the options or with `/su set threshold` and `/su set strangers`
+    in the options or with `/su set threshold` and `/su set strangers`, or ignore strangers
+    completely with `/su set strangers off`
 - The reason you give when flagging someone (or who you summoned, from the kick popup) shows
   next to your flags in the list, with the full text on hover. Turn it off in the options
   or with `/su set reasons off`. `/su check` shows it too

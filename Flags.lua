@@ -129,7 +129,8 @@ function ns.Community(bucket, key)
         if known then nKnown = nKnown + 1 end
     end
     local st = ns.db.settings
-    local shown = n > 0 and (trusted or nKnown >= st.communityThreshold or nSources >= st.strangerThreshold)
+    local shown = n > 0 and (trusted or nKnown >= st.communityThreshold
+        or (st.countStrangers and nSources >= st.strangerThreshold))
     return n, shown, latest, total, relayed
 end
 

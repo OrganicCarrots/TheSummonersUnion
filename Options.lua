@@ -192,15 +192,17 @@ local function build()
         "How many people you know must report the same player before you're warned about them. People you know: your guild, your group, or anyone you've grouped with in the last 30 days. Everything one person passes on counts as one.")
     stepper(RIGHT_X, -256, "strangerThreshold", "Reports from strangers", { 1, 2, 3, 4, 5, 6, 8, 10, 15, 20 }, plain,
         "How many people in all must report the same player when some of them are strangers, like people on the union channel you've never played with. Nobody can check who really grouped with whom, so this stops a few made-up characters from getting someone flagged.")
-    checkbox(RIGHT_X, -284, "trustGuildmates", "One guildmate's report is enough",
+    checkbox(RIGHT_X, -282, "countStrangers", "Use reports from strangers",
+        "Turn this off to only count reports from people you know. Strangers' reports still show in the Community tab, they just never warn you.")
+    checkbox(RIGHT_X, -308, "trustGuildmates", "One guildmate's report is enough",
         "Count a report from your own guild as enough on its own, whatever the numbers above.")
-    checkbox(RIGHT_X, -310, "acceptRelays", "Count reports passed on by others",
+    checkbox(RIGHT_X, -334, "acceptRelays", "Count reports passed on by others",
         "Members pass on reports they got from other members, so the list fills in on its own. These can't be checked, so everything one person passes on counts as one toward the numbers above, and /su distrust drops everything they filed or passed on.")
-    stepper(RIGHT_X, -340, "communityExpiryDays", "Forget reports after", { 30, 60, 90, 180, 365, 0 }, days,
+    stepper(RIGHT_X, -364, "communityExpiryDays", "Forget reports after", { 30, 60, 90, 180, 365, 0 }, days,
         "Reports from other members stop counting once they're this old, and are cleared out when you log in.", true)
 
-    header(RIGHT_X, -376, "Your flags")
-    stepper(RIGHT_X, -396, "flagExpiryDays", "Forget your flags after", { 90, 180, 365, 730, 0 }, days,
+    header(RIGHT_X, -400, "Your flags")
+    stepper(RIGHT_X, -420, "flagExpiryDays", "Forget your flags after", { 90, 180, 365, 730, 0 }, days,
         "Forget your own (and imported) flags once they're this old. Checked when you log in or /reload, so you can change your mind first.", true)
 
     -- not every client shows the settings window's own defaults button
@@ -212,7 +214,7 @@ local function build()
         "Throws away every report other players sent you, in case bad ones got in. Your own flags stay. /su purge has more options.")
 
     local list = button("Open the list", 110, function() ns.ToggleWindow() end)
-    list:SetPoint("TOPLEFT", RIGHT_X, -434)
+    list:SetPoint("TOPLEFT", RIGHT_X, -458)
     local export = button("Export", 80, function() ns.ShowExport() end)
     export:SetPoint("LEFT", list, "RIGHT", 6, 0)
     local import = button("Import", 80, function() ns.ShowImport() end)

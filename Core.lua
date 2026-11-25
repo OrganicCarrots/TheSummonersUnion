@@ -28,6 +28,7 @@ ns.DEFAULTS = {
         autoDecline = false,        -- decline invites from flagged players outright
         communityThreshold = 2,     -- people you know who must report someone before you're warned
         strangerThreshold = 4,      -- ...or this many people in all, counting ones you don't know
+        countStrangers = true,      -- off: only people you know can get someone flagged for you
         trustGuildmates = true,     -- one report from a guildmate is enough
         shareGuild = true,
         shareGroup = true,
@@ -351,6 +352,13 @@ ns.OnOff = onoff
 
 local function setCommand(rest)
     local opt, val = rest:lower():match("^(%S+)%s*(%S*)$")
+    -- /su set strangers on|off, a number still sets how many
+    if opt == "strangers" and onoff(val) ~= nil then
+        ns.SetSetting("countStrangers", onoff(val))
+        ns.Print(ns.db.settings.countStrangers and "Reports from strangers count again."
+            or "Reports from strangers are ignored now. Only people you know can get someone flagged for you.")
+        return
+    end
     local def = SETTINGS[opt or ""]
     if not def then
         ns.Print("Options: " .. table.concat(SETTING_NAMES, ", ") .. ". Or use /su options.")

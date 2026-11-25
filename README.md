@@ -54,6 +54,7 @@ shares flags with other people running the addon.
 | `/su set minsummons <n>` | Summons needed before a kick counts (default 1) |
 | `/su set threshold <n>` | How many people you know need to report someone before you see it (default 2) |
 | `/su set strangers <n>` | ...or how many people in all, counting ones you don't know (default 4) |
+| `/su set strangers on\|off` | Off ignores strangers' reports completely, only people you know count |
 | `/su set autodecline on\|off` | Decline invites from flagged players |
 | `/su set relays on\|off` | Count reports other people pass on, not just first hand ones (default on) |
 | `/su set forward on\|off` | Pass new reports on to your other channels (default on) |
