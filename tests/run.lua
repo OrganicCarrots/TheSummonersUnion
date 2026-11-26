@@ -829,6 +829,37 @@ test("sync answers pack everything we know into a few messages", function()
     ok(#msgs < 10, "batched (" .. #msgs .. " messages)")
 end)
 
+test("upgraded sync sends every same-day record while legacy sync stays capped", function()
+    for i = 1, 150 do
+        ns.db.players["target" .. i .. "-mankrik"] = { source = "you", when = time(), kind = "kick" }
+    end
+    local function count(messages)
+        local total = 0
+        for _, text in ipairs(messages) do total = total + #ns.DecodeMessages(text) end
+        return total
+    end
+    eq(count(ns.SyncMessages(0)), 120, "legacy cap")
+    eq(count(ns.SyncMessages(0, nil, nil, true)), 150, "all records")
+    eq(ns.DecodeMessage(ns.EncodeQuery(0, true)).full, true, "full sync request")
+end)
+
+test("late direct flags and withdrawals do not undo newer edits", function()
+    local sender = "Ann-Faerlina"
+    local key = "target-mankrik"
+    local id = ns.RecordId("P", key, "ann-faerlina")
+    local rev = time()
+    local flag = ns.EncodeFlag("P", key, { kind = "kick", rev = rev })
+    local withdrawal = ns.EncodeRetract("P", key, nil, nil, rev + 1)
+    hear(flag, "CHANNEL", sender)
+    hear(withdrawal, "CHANNEL", sender)
+    hear(flag, "CHANNEL", sender)
+    eq(ns.db.withdrawalRev[id], rev + 1, "withdrawal survived")
+    eq(ns.db.community.players[key], nil, "old flag ignored")
+    hear(ns.EncodeFlag("P", key, { kind = "kick", rev = rev + 2 }), "CHANNEL", sender)
+    hear(withdrawal, "CHANNEL", sender)
+    eq(ns.db.community.players[key]["ann-faerlina"].rev, rev + 2, "new flag survived")
+end)
+
 test("a query isn't answered with what someone else already sent", function()
     hear(flagMsg(0), "GUILD", "Ann-Faerlina")
     M.Advance(10)

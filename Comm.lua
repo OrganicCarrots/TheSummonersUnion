@@ -47,7 +47,7 @@ local function ownRecord(kind, key, rec)
     return table.concat({
         "F", kind, who(kind, key, rec.name), kind == "P" and guildField(rec.guildKey, rec.guild) or "",
         tostring(math.min(tonumber(rec.summons) or 0, 99)), tostring(dayOf(rec.when)),
-        clean(rec.kind or "manual", 10), tostring(countOf(rec.times)), classOf(rec.class) or "",
+        clean(rec.kind or "manual", 10), tostring(countOf(rec.times)), classOf(rec.class) or "", tostring(rec.rev or ""),
     }, SEP)
 end
 
@@ -55,18 +55,18 @@ local function relayRecord(kind, key, reporter, r)
     return table.concat({
         "R", kind, who(kind, key, r.n), kind == "P" and guildField(r.g, r.gn) or "",
         tostring(math.min(tonumber(r.s) or 0, 99)), tostring(r.d or ns.Today()),
-        clean(r.r or "manual", 10), tostring(countOf(r.c)), clean(reporter, 64), classOf(r.cl) or "",
+        clean(r.r or "manual", 10), tostring(countOf(r.c)), clean(reporter, 64), classOf(r.cl) or "", tostring(r.rev or ""),
     }, SEP)
 end
 
 function ns.EncodeFlag(kind, key, rec) return PROTO .. SEP .. ownRecord(kind, key, rec) end
 
-function ns.EncodeRetract(kind, key, rec, day)
-    return table.concat({ PROTO, "X", kind, who(kind, key, rec and rec.name), tostring(day or ns.Today()) }, SEP)
+function ns.EncodeRetract(kind, key, rec, day, rev)
+    return table.concat({ PROTO, "X", kind, who(kind, key, rec and rec.name), tostring(day or ns.Today()), tostring(rev or "") }, SEP)
 end
 
-function ns.EncodeQuery(sinceDay)
-    return table.concat({ PROTO, "Q", tostring(sinceDay or 0) }, SEP)
+function ns.EncodeQuery(sinceDay, full)
+    return table.concat({ PROTO, "Q", tostring(sinceDay or 0), full and "all" or "" }, SEP)
 end
 
 local function reporterKey(s)
@@ -76,7 +76,7 @@ end
 
 local function decodeRecord(f)
     local t = f[1]
-    if t == "Q" then return { type = "Q", since = tonumber(f[2]) or 0 } end
+    if t == "Q" then return { type = "Q", since = tonumber(f[2]) or 0, full = f[3] == "all" } end
     if t ~= "F" and t ~= "X" and t ~= "R" and t ~= "Y" then return nil end
     local kind, id = f[2], f[3] or ""
     local m = { type = t, kind = kind }
@@ -112,6 +112,8 @@ local function decodeRecord(f)
         if not m.reporter then return nil end
         day = f[5]
     end
+    local rev = tonumber(f[({ F = 10, R = 11, X = 5, Y = 6 })[t]])
+    if rev and rev >= 1 and rev <= time() + 86400 and rev == math.floor(rev) then m.rev = rev end
     m.day = math.floor(tonumber(day) or today)
     if m.day > today + 1 or m.day < today - 3650 then return nil end
     return m
@@ -137,9 +139,36 @@ function ns.DecodeMessage(text)
     return list and list[1]
 end
 
-local queue, ticker = {}, nil
+local queue, priority, streams, ticker = {}, {}, {}, nil
+local function currentBatch(text)
+    local records = {}
+    for rec in (text:sub(5) .. RSEP):gmatch("(.-)%^") do
+        local m = decodeRecord(split(rec))
+        if m then
+            local own = (m.kind == "P" and ns.db.players or ns.db.guilds)[m.key]
+            local id = ns.RecordId(m.kind, m.key, ns.playerKey)
+            if m.type == "R" or m.type == "Y"
+                or (m.type == "F" and own and own.source == "you" and not own.private and m.rev == own.rev)
+                or (m.type == "X" and ns.db.retracted[id] == m.day and ns.db.withdrawalRev[id] == m.rev) then
+                records[#records + 1] = rec
+            end
+        end
+    end
+    if #records > 0 then return PROTO .. SEP .. "B" .. SEP .. table.concat(records, RSEP) end
+end
+
 local function pump()
-    local item = table.remove(queue, 1)
+    local item = table.remove(priority, 1) or table.remove(queue, 1)
+    while not item and streams[1] do
+        local stream = streams[1]
+        if not stream.active() or not stream.messages[stream.next] then
+            table.remove(streams, 1)
+        else
+            local text = currentBatch(stream.messages[stream.next])
+            if text then item = { text = text, chatType = stream.channel, target = stream.target } end
+            stream.next = stream.next + 1
+        end
+    end
     if not item then
         if ticker then ticker:Cancel() end
         ticker = nil
@@ -148,10 +177,20 @@ local function pump()
     pcall(C_ChatInfo.SendAddonMessage, PREFIX, item.text, item.chatType, item.target)
 end
 
-function ns.Send(text, chatType, target)
-    if #queue >= MAX_QUEUE or #text > MAX_LEN then return end
-    queue[#queue + 1] = { text = text, chatType = chatType, target = target }
+local function startPump()
     if not ticker then ticker = C_Timer.NewTicker(SEND_INTERVAL, pump) end
+end
+
+function ns.Send(text, chatType, target, urgent)
+    if #text > MAX_LEN then return false end
+    if #queue + #priority >= MAX_QUEUE then
+        if not urgent or #queue == 0 then return false end
+        table.remove(queue)
+    end
+    local lane = urgent and priority or queue
+    lane[#lane + 1] = { text = text, chatType = chatType, target = target }
+    startPump()
+    return true
 end
 
 local function channelId()
@@ -183,18 +222,26 @@ local function scopes()
 end
 
 local function broadcast(text)
-    for _, s in ipairs(scopes()) do ns.Send(text, s[1], s[2]) end
+    for _, s in ipairs(scopes()) do ns.Send(text, s[1], s[2], true) end
+end
+
+local function nextRevision(old)
+    return math.max(time(), (old or 0) + 1)
 end
 
 ns.Listen("FLAG_ADDED", function(kind, key, rec)
     if rec.private then return end
-    ns.db.retracted[ns.RecordId(kind, key, ns.playerKey)] = nil
+    local id = ns.RecordId(kind, key, ns.playerKey)
+    rec.rev = nextRevision(math.max(rec.rev or 0, ns.db.withdrawalRev[id] or 0))
+    ns.db.retracted[id], ns.db.withdrawalRev[id] = nil, nil
     broadcast(ns.EncodeFlag(kind, key, rec))
 end)
 ns.Listen("FLAG_REMOVED", function(kind, key, rec)
     if rec.private then return end
-    ns.db.retracted[ns.RecordId(kind, key, ns.playerKey)] = ns.Today()
-    broadcast(ns.EncodeRetract(kind, key, rec))
+    local id = ns.RecordId(kind, key, ns.playerKey)
+    local rev = nextRevision(rec.rev)
+    ns.db.retracted[id], ns.db.withdrawalRev[id] = ns.Today(), rev
+    broadcast(ns.EncodeRetract(kind, key, rec, nil, rev))
 end)
 
 local function dropReport(bucket, key, reporter)
@@ -237,7 +284,7 @@ local function putReport(bucket, m, reporter, via, relayer, channel)
         end
         if here >= limits.relaysPerTarget then return false end
     end
-    if old and not relayer and not old.rl and old.d == m.day and (old.c or 1) == (m.count or 1) then
+    if old and not relayer and not old.rl and old.rev == m.rev and old.d == m.day and (old.c or 1) == (m.count or 1) then
         if via == "GUILD" then old.via = via end
         return false
     end
@@ -247,7 +294,7 @@ local function putReport(bucket, m, reporter, via, relayer, channel)
     if newRelayer then db.relayCounts[relayer] = (db.relayCounts[relayer] or 0) + 1 end
     all[m.key] = all[m.key] or {}
     all[m.key][reporter] = { n = m.name, g = m.guildKey, gn = m.guild, s = m.summons, d = m.day, r = m.reason,
-                             c = m.count or 1, via = via, rl = relayer, cl = m.class, ch = channel, at = time() }
+                             c = m.count or 1, via = via, rl = relayer, cl = m.class, ch = channel, at = time(), rev = m.rev }
     return true
 end
 
@@ -257,12 +304,17 @@ local function handle(sender, via, m)
     local reporter = m.reporter or sender
     if reporter == sender then
         local id = ns.RecordId(m.kind, m.key, sender)
+        local old = db.community[bucket][m.key] and db.community[bucket][m.key][sender]
+        local withdrawn = db.retracted[id]
+        local withdrawalRev = db.withdrawalRev[id]
+        if old and not old.rl and (m.day < old.d or (m.rev and old.rev and m.rev < old.rev)) then return false end
+        if withdrawn and (m.day < withdrawn or (m.rev and withdrawalRev and m.rev <= withdrawalRev)) then return false end
         if m.type == "F" or m.type == "R" then
             if ns.ReportExpired(m.day) then return false end
-            db.retracted[id] = nil
+            db.retracted[id], db.withdrawalRev[id] = nil, nil
             return putReport(bucket, m, sender, via, nil, via)
         end
-        if (db.retracted[id] or -1) < m.day then db.retracted[id] = m.day end
+        db.retracted[id], db.withdrawalRev[id] = m.day, m.rev
         return dropReport(bucket, m.key, sender)
     end
 
@@ -271,14 +323,22 @@ local function handle(sender, via, m)
     local existing = db.community[bucket][m.key] and db.community[bucket][m.key][reporter]
     if existing and not existing.rl then return false end
     if m.type == "R" then
-        if ns.ReportExpired(m.day) or (db.retracted[id] or -1) >= m.day then return false end
-        if existing and ((existing.d or 0) > m.day or ((existing.d or 0) == m.day and (existing.c or 1) >= m.count)) then
-            return false
+        local withdrawn, rev = db.retracted[id], db.withdrawalRev[id]
+        if ns.ReportExpired(m.day) then return false end
+        if withdrawn and (m.day < withdrawn or (m.day == withdrawn and (not rev or not m.rev or m.rev <= rev))) then return false end
+        if existing then
+            if existing.d > m.day then return false end
+            if existing.rev and m.rev then
+                if existing.rev >= m.rev then return false end
+            elseif existing.d == m.day and (existing.c or 1) >= m.count then
+                return false
+            end
         end
         return putReport(bucket, m, reporter, "RELAY", sender, via)
     end
     if not existing or existing.rl ~= sender then return false end
-    if (db.retracted[id] or -1) < m.day then db.retracted[id] = m.day end
+    if existing.d > m.day or (existing.rev and m.rev and existing.rev > m.rev) then return false end
+    db.retracted[id], db.withdrawalRev[id] = m.day, m.rev
     return dropReport(bucket, m.key, reporter)
 end
 
@@ -301,7 +361,7 @@ function ns.Purge(what, hours)
     end
     if what == "all" then
         for id in pairs(db.retracted) do
-            if id:match("^%a|.-|(.+)$") ~= ns.playerKey then db.retracted[id] = nil end
+            if id:match("^%a|.-|(.+)$") ~= ns.playerKey then db.retracted[id], db.withdrawalRev[id] = nil, nil end
         end
     end
     ns.Fire("FLAGS_CHANGED")
@@ -318,10 +378,10 @@ function ns.SlashPurge(rest)
     ns.Print(("Cleared %d report(s) from other people. Your own flags are untouched."):format(ns.Purge(what, hours)))
 end
 
-local function syncRecords(since, skip, querier)
+local function syncRecords(since, skip, querier, full)
     local db, me, items = ns.db, ns.playerKey, {}
     local function add(day, rec, id, reporter)
-        if (day or 0) >= since and not skip[id] and reporter ~= querier then items[#items + 1] = { day or 0, rec } end
+        if (day or 0) >= since and not skip[id] and reporter ~= querier then items[#items + 1] = { day or 0, rec, id } end
     end
     for _, kind in ipairs({ "P", "G" }) do
         for key, rec in pairs(kind == "P" and db.players or db.guilds) do
@@ -342,15 +402,18 @@ local function syncRecords(since, skip, querier)
         if kind then
             local target = who(kind, key, nil)
             if reporter == me then
-                add(day, table.concat({ "X", kind, target, tostring(day) }, SEP), id, reporter)
+                add(day, table.concat({ "X", kind, target, tostring(day), tostring(db.withdrawalRev[id] or "") }, SEP), id, reporter)
             else
-                add(day, table.concat({ "Y", kind, target, reporter, tostring(day) }, SEP), id, reporter)
+                add(day, table.concat({ "Y", kind, target, reporter, tostring(day), tostring(db.withdrawalRev[id] or "") }, SEP), id, reporter)
             end
         end
     end
-    table.sort(items, function(a, b) return a[1] > b[1] end)
+    table.sort(items, function(a, b)
+        if a[1] == b[1] then return a[3] < b[3] end
+        return a[1] > b[1]
+    end)
     local out = {}
-    for i = 1, math.min(#items, ns.LIMITS.replyRecords) do out[i] = items[i][2] end
+    for i = 1, (full and #items or math.min(#items, ns.LIMITS.replyRecords)) do out[i] = items[i][2] end
     return out
 end
 
@@ -370,9 +433,10 @@ local function pack(records)
     return msgs
 end
 
-function ns.SyncMessages(since, skip, querier) return pack(syncRecords(since or 0, skip or {}, querier)) end
+function ns.SyncMessages(since, skip, querier, full) return pack(syncRecords(since or 0, skip or {}, querier, full)) end
 
 local pending, lastReply = {}, {}
+local groupSession = 0
 local function slotOf(chatType, target) return chatType .. tostring(target or "") end
 
 local outbox, flushing, forwarded, windowStart, denied = {}, false, 0, 0, {}
@@ -393,7 +457,7 @@ end
 
 function ns.ResetSync()
     pending, lastReply, outbox, flushing, forwarded, windowStart, denied = {}, {}, {}, false, 0, 0, {}
-    rate = {}
+    rate, streams = {}, {}
 end
 
 local function flush()
@@ -439,8 +503,9 @@ local function currentRecord(kind, key, reporter)
     local reports = db.community[bucketOf(kind)][key]
     local r = reports and reports[reporter]
     if r then return relayRecord(kind, key, reporter, r) end
-    local day = db.retracted[ns.RecordId(kind, key, reporter)] or ns.Today()
-    return table.concat({ "Y", kind, who(kind, key, nil), reporter, tostring(day) }, SEP)
+    local id = ns.RecordId(kind, key, reporter)
+    local day = db.retracted[id] or ns.Today()
+    return table.concat({ "Y", kind, who(kind, key, nil), reporter, tostring(day), tostring(db.withdrawalRev[id] or "") }, SEP)
 end
 
 local function denyForgery(m, id, channel)
@@ -449,13 +514,14 @@ local function denyForgery(m, id, channel)
     if own and own.source == "you" and not own.private then return end
     if denied[id] and time() - denied[id] < REPLY_COOLDOWN then return end
     denied[id] = time()
-    ns.db.retracted[id] = ns.Today()
+    local rev = nextRevision(ns.db.withdrawalRev[id])
+    ns.db.retracted[id], ns.db.withdrawalRev[id] = ns.Today(), rev
     local target = channel == "CHANNEL" and channelId() or nil
     if channel == "CHANNEL" and not target then return end
-    ns.Send(ns.EncodeRetract(m.kind, m.key, { name = m.name }), channel, target)
+    ns.Send(ns.EncodeRetract(m.kind, m.key, { name = m.name }, nil, rev), channel, target, true)
 end
 
-local function onQuery(channel, sender, since)
+local function onQuery(channel, sender, since, full)
     local target
     if channel == "CHANNEL" then
         target = channelId()
@@ -466,12 +532,26 @@ local function onQuery(channel, sender, since)
     if not sharingOn(channel) then return end
     local slot = slotOf(channel, target)
     if pending[slot] or (lastReply[slot] and time() - lastReply[slot] < REPLY_COOLDOWN) then return end
-    pending[slot] = { seen = {} }
+    for _, stream in ipairs(streams) do if stream.slot == slot and stream.active() then return end end
+    local request = { seen = {} }
+    local session, channelName = groupSession, ns.db.settings.channelName
+    local guild = channel == "GUILD" and GetGuildInfo("player")
+    local function active()
+        if not sharingOn(channel) then return false end
+        if channel == "CHANNEL" then return channelName == ns.db.settings.channelName and target == channelId() end
+        if channel == "GUILD" then return IsInGuild() and GetGuildInfo("player") == guild end
+        return session == groupSession and IsInGroup() and ns.GroupChannel() == channel
+    end
+    pending[slot] = request
     C_Timer.After(3 + math.random() * 12, function()
-        local p = pending[slot]
+        if pending[slot] ~= request then return end
         pending[slot] = nil
+        if not active() then return end
         lastReply[slot] = time()
-        for _, text in ipairs(ns.SyncMessages(since, p and p.seen, sender)) do ns.Send(text, channel, target) end
+        local messages = ns.SyncMessages(since, request.seen, sender, full)
+        if #messages == 0 then return end
+        streams[#streams + 1] = { slot = slot, messages = messages, next = 1, active = active, channel = channel, target = target }
+        startPump()
     end)
 end
 
@@ -495,7 +575,7 @@ ns.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
     local changed = false
     for _, m in ipairs(list) do
         if m.type == "Q" then
-            onQuery(channel, senderKey, m.since)
+            onQuery(channel, senderKey, m.since, m.full)
         else
             local reporter = m.reporter or senderKey
             local id = ns.RecordId(m.kind, m.key, reporter)
@@ -529,20 +609,23 @@ function ns.JoinUnionChannel()
         local id = channelId()
         if not id then return end
         if ChatFrame_RemoveChannel and DEFAULT_CHAT_FRAME then ChatFrame_RemoveChannel(DEFAULT_CHAT_FRAME, name) end
-        ns.Send(ns.EncodeQuery(querySince(30)), "CHANNEL", id)
+        ns.Send(ns.EncodeQuery(querySince(30), true), "CHANNEL", id)
     end)
 end
 
 ns.OnReady(function()
     if ns.db.settings.shareChannel then C_Timer.After(10, ns.JoinUnionChannel) end
     C_Timer.After(30, function()
-        if sharingOn("GUILD") and IsInGuild() then ns.Send(ns.EncodeQuery(querySince(180)), "GUILD") end
+        if sharingOn("GUILD") and IsInGuild() then ns.Send(ns.EncodeQuery(querySince(180), true), "GUILD") end
     end)
 end)
 
+ns.On("GROUP_LEFT", function() groupSession = groupSession + 1 end)
+
 ns.On("GROUP_JOINED", function()
+    groupSession = groupSession + 1
     C_Timer.After(8, function()
-        if IsInGroup() and sharingOn("PARTY") then ns.Send(ns.EncodeQuery(querySince(180)), ns.GroupChannel()) end
+        if IsInGroup() and sharingOn("PARTY") then ns.Send(ns.EncodeQuery(querySince(180), true), ns.GroupChannel()) end
     end)
 end)
 

@@ -289,7 +289,7 @@ function ns.Prune()
     db.reporterCounts, db.relayCounts = counts, relays
 
     for id, day in pairs(db.retracted) do
-        if ns.ReportExpired(day) then db.retracted[id] = nil end
+        if ns.ReportExpired(day) then db.retracted[id], db.withdrawalRev[id] = nil, nil end
     end
     local today = ns.Today()
     for k in pairs(db.filed) do

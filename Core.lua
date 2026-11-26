@@ -14,6 +14,7 @@ ns.DEFAULTS = {
     relayCounts = {},
     distrust = {},
     retracted = {},
+    withdrawalRev = {},
     filed = {},
     seen = {},
     seenGuilds = {},

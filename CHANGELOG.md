@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.0-beta2.4.1
+
+- Sync catches up on older reports even when there are more than 120.
+- New flags and withdrawals go out before background sync.
+- Late messages from updated clients respect newer flags and withdrawals.
+
 ## v1.0.0-beta2.4
 
 - Anyone sending more than 60 addon messages a minute gets ignored automatically (the addon
