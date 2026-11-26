@@ -73,6 +73,9 @@ A shared list is only useful if people can't spam it, so:
   private: it still warns you, but nobody else sees it.
 - Anyone who files more than 10 new reports in one day gets ignored automatically. You get
   a message, and `/su trust <name>` undoes it.
+- Same for anyone sending more than 60 messages a minute (the addon itself never sends more
+  than 50). Every player's addon checks this on its own end, so changing your own copy
+  doesn't get around it.
 - Someone else's report only warns you once 2 people you know have reported the same
   player, or 4 people in all (`/su set threshold`, `/su set strangers`). People you know
   are your guild, your group, and anyone you've grouped with in the last 30 days. The

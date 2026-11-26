@@ -1,5 +1,3 @@
--- right-click menu on players: flag or unflag them and their guild.
--- needs the Menu api, older clients just don't get the entry (hooking their dropdowns taints)
 local _, ns = ...
 
 local MENUS = { "MENU_UNIT_PLAYER", "MENU_UNIT_PARTY", "MENU_UNIT_RAID_PLAYER", "MENU_UNIT_ENEMY_PLAYER", "MENU_UNIT_FRIEND" }

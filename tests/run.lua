@@ -1,10 +1,8 @@
--- offline tests, run with ./test.sh
 package.path = "./tests/?.lua;" .. package.path
 local M = require("wowmock")
 local ADDON = "TheSummonersUnion"
 local DIR = ""
 
--- load files in TOC order like the client does
 local ns = {}
 for line in io.lines(DIR .. ADDON .. ".toc") do
     local file = line:match("^([%w_]+%.lua)%s*$")
@@ -15,11 +13,11 @@ M.Fire("PLAYER_LOGIN")
 
 local passed, failed = 0, 0
 local function test(name, fn)
-    M.Advance(120) -- let anything queued by the previous test finish first
+    M.Advance(120)
     M.Reset()
     ns.ResetSync()
     SummonersUnionDB = ns.ApplyDefaults({}, ns.DEFAULTS)
-    SummonersUnionDB.settings.strangerThreshold = 2 -- most tests are older than this setting, the strangers tests set it back
+    SummonersUnionDB.settings.strangerThreshold = 2
     ns.db = SummonersUnionDB
     local ok, err = pcall(fn)
     if ok then passed = passed + 1; print("PASS  " .. name)
@@ -47,7 +45,6 @@ local function getKicked()
     M.Advance(3)
 end
 
--- names and keys
 test("player keys add the home realm and ignore case", function()
     eq(ns.PlayerKey("badlead"), "badlead-whitemane", "bare name")
     eq(ns.PlayerKey("Badlead-Whitemane"), "badlead-whitemane", "full name")
@@ -57,7 +54,6 @@ test("player keys add the home realm and ignore case", function()
     eq(ns.GuildKey("Greedy Raiders"), "greedy raiders@whitemane", "guild key")
 end)
 
--- detection
 test("summon then kick asks to flag the leader and their guild", function()
     joinBadGroup()
     summon("Tank", "c1"); summon("Healer", "c2"); summon("Dps", "c3")
@@ -71,7 +67,6 @@ test("summon then kick asks to flag the leader and their guild", function()
     eq(d.kind, "kick", "kind")
     eq(table.concat(d.targets, ","), "Tank,Healer,Dps", "summon targets")
     ok(M.popups[1].text:find("removed you from the group", 1, true), "prompt wording")
-    -- clicking "Player + guild"
     StaticPopupDialogs.SUMMONERSUNION_KICKED.OnAlt(nil, d)
     ok(ns.db.players["badlead-whitemane"], "player flagged")
     ok(ns.db.guilds["greedy raiders@whitemane"], "guild flagged")
@@ -136,7 +131,6 @@ test("summons by a non-warlock are ignored", function()
     eq(#M.popups, 0, "prompts shown")
 end)
 
--- warnings
 test("an invite from a flagged player raises an alert", function()
     ns.FlagPlayer("badlead-whitemane", { name = "Badlead-Whitemane", kind = "kick", summons = 3, source = "you" }, true)
     M.Fire("PARTY_INVITE_REQUEST", "Badlead")
@@ -154,6 +148,16 @@ test("autodecline declines flagged invites only", function()
     eq(M.declined, 1, "declined the flagged invite")
 end)
 
+test("your flags remember which of your characters made them", function()
+    ok(ns.playerKey, "player key")
+    ns.FlagPlayer("badlead-whitemane", { name = "Badlead-Whitemane", kind = "kick", source = "you" }, true)
+    eq(ns.db.players["badlead-whitemane"].by, ns.playerKey, "flagged by")
+    ns.FlagGuild("greedy raiders@whitemane", { name = "Greedy Raiders", kind = "kick", source = "you" }, true)
+    eq(ns.db.guilds["greedy raiders@whitemane"].by, ns.playerKey, "guild flagged by")
+    ns.FlagPlayer("other-whitemane", { name = "Other-Whitemane", kind = "manual", source = "import" }, true)
+    eq(ns.db.players["other-whitemane"].by, nil, "imported flag")
+end)
+
 test("a flagged guild member in your group is warned once", function()
     ns.FlagGuild("greedy raiders@whitemane", { name = "Greedy Raiders", kind = "kick", source = "you" }, true)
     joinBadGroup()
@@ -162,7 +166,6 @@ test("a flagged guild member in your group is warned once", function()
     ok(M.alerts[1]:find("(group leader)", 1, true), "mentions leader")
 end)
 
--- sharing
 test("a new flag is broadcast to guild and group, throttled", function()
     joinBadGroup()
     ns.FlagPlayer("badlead-whitemane", { name = "Badlead-Whitemane", guildKey = "greedy raiders@whitemane",
@@ -248,7 +251,6 @@ test("Retail secret values are skipped instead of erroring", function()
     issecretvalue = nil
 end)
 
--- export / import
 test("export round-trips and rejects tampering", function()
     ns.FlagPlayer("badlead-whitemane", { name = "Badlead-Whitemane", guildKey = "greedy raiders@whitemane",
         guild = "Greedy Raiders", kind = "kick", summons = 3, source = "you" }, true)
@@ -273,7 +275,6 @@ test("export round-trips and rejects tampering", function()
     eq(again.skipped, 2, "re-import skips existing")
 end)
 
--- commands and UI smoke tests
 test("slash commands flag, check and unflag", function()
     ns.Slash("flag Badlead stole the summons")
     ok(ns.db.players["badlead-whitemane"], "flagged")
@@ -324,7 +325,6 @@ test("unflagguild by name finds a guild flagged from a target on another realm",
     eq(ns.db.guilds["twins@mankrik"], nil, "the realm picks one")
 end)
 
--- wow forever: no realms, and UnitName gives the last name in the realm slot
 local function noRealms(fn)
     M.realm = ""
     local ok2, err = pcall(fn)
@@ -474,7 +474,6 @@ test("windows build and refresh without errors", function()
     eq(ns.db.players["example-realm"], nil, "preview flags nothing")
 end)
 
--- settings
 test("slash settings are clamped to sensible ranges", function()
     ns.Slash("set threshold 0")
     eq(ns.db.settings.communityThreshold, 1, "threshold floor")
@@ -542,7 +541,6 @@ test("turning the union channel on and off joins and leaves it", function()
     eq(M.leftChannels[1], "SummonersUnion", "left")
 end)
 
--- minimap and compartment
 test("the minimap button shows, hides, drags and clicks", function()
     local b = ns.MinimapButton()
     ok(b and b.shown, "created and shown at login")
@@ -551,13 +549,13 @@ test("the minimap button shows, hides, drags and clicks", function()
     ns.Slash("minimap")
     eq(b.shown, true, "shown again")
 
-    M.cursor = { 600, 400 } -- straight east of the minimap's centre
+    M.cursor = { 600, 400 }
     b.scripts.OnDragStart(b)
     b.scripts.OnUpdate(b)
     eq(ns.db.settings.minimapAngle, 0, "angle east")
     eq(b.point[4], 75, "on the edge, x")
     eq(math.floor(b.point[5] + 0.5), 0, "on the edge, y")
-    M.cursor = { 500, 300 } -- straight south
+    M.cursor = { 500, 300 }
     b.scripts.OnUpdate(b)
     eq(ns.db.settings.minimapAngle, 270, "angle south")
     eq(math.floor(b.point[5] + 0.5), -75, "on the edge, y")
@@ -638,7 +636,6 @@ test("the addon compartment entry opens the list and options", function()
     SummonersUnion_OnAddonCompartmentLeave()
 end)
 
--- dungeon finder groups
 test("dungeon finder groups share over INSTANCE_CHAT", function()
     joinBadGroup()
     M.instance = true
@@ -648,7 +645,6 @@ test("dungeon finder groups share over INSTANCE_CHAT", function()
     eq(M.sent[2].chatType, "INSTANCE_CHAT", "group scope")
 end)
 
--- aging
 local function report(sender, daysAgo, channel)
     local msg = ns.EncodeFlag("P", "badlead-whitemane", { name = "Badlead-Whitemane", kind = "kick", when = time() - daysAgo * 86400 })
     M.Fire("CHAT_MSG_ADDON", "SUMUNION", msg, channel or "CHANNEL", sender)
@@ -685,7 +681,6 @@ test("your own flags are only forgotten at login, and only if you ask", function
     ok(ns.db.players["new-whitemane"], "recent flag kept")
 end)
 
--- counts, relays and sync ----------------------------------------------------------------
 local function hear(text, channel, sender)
     M.Fire("CHAT_MSG_ADDON", "SUMUNION", text, channel or "CHANNEL", sender)
 end
@@ -761,7 +756,6 @@ test("retractions stick, so relays can't bring a report back", function()
     eq(ns.Status("badlead-whitemane").cPlayer, 0, "stale relay ignored")
     hear(flagMsg(0), "GUILD", "Ann-Faerlina")
     eq(ns.Status("badlead-whitemane").cPlayer, 1, "a new first hand report still counts")
-    -- a passed-on withdrawal only counts from whoever passed that report to us
     hear(relayMsg("Bob-Faerlina", 1), "GUILD", "Relayer-Whitemane")
     eq(ns.Status("badlead-whitemane").cPlayer, 2, "relayed copy stored")
     hear("1~B~Y~P~Badlead-Whitemane~bob-faerlina~" .. ns.Today(), "GUILD", "Other-Whitemane")
@@ -883,7 +877,6 @@ test("pruning keeps the report store bounded", function()
     eq(ns.db.relayCounts["relayer-whitemane"], 1, "relay counts recounted")
 end)
 
--- passing reports on as they happen --------------------------------------------------------
 local function sentRecords(kind)
     local out = {}
     for _, s in ipairs(M.sent) do
@@ -971,6 +964,23 @@ test("passed-on reports count as whoever passed them on, even under real people'
     eq(ns.Status("badlead-whitemane").flagged, true, "a second person passing one on makes two")
 end)
 
+test("anyone sending too many messages in a minute gets ignored", function()
+    for i = 1, ns.LIMITS.floodPerMinute do hear(ns.EncodeQuery(0), "CHANNEL", "Flooder-Faerlina") end
+    eq(ns.db.distrust["flooder-faerlina"], nil, "up to the limit is fine")
+    hear(ns.EncodeQuery(0), "CHANNEL", "Flooder-Faerlina")
+    eq(ns.db.distrust["flooder-faerlina"], "auto", "one more and they're ignored")
+    ok(M.chat[#M.chat]:find("more than 60 messages in a minute", 1, true), "says why")
+    hear(flagMsg(0), "CHANNEL", "Flooder-Faerlina")
+    eq(ns.db.community.players["badlead-whitemane"], nil, "nothing from them counts after that")
+    hear(flagMsg(0), "CHANNEL", "Honest-Faerlina")
+    ok(ns.db.community.players["badlead-whitemane"]["honest-faerlina"], "other people are fine")
+    M.Advance(61)
+    for i = 1, 30 do hear(ns.EncodeQuery(0), "CHANNEL", "Busy-Faerlina") end
+    M.Advance(61)
+    for i = 1, 30 do hear(ns.EncodeQuery(0), "CHANNEL", "Busy-Faerlina") end
+    eq(ns.db.distrust["busy-faerlina"], nil, "the count starts over every minute")
+end)
+
 test("strangers need more reporters than people you know", function()
     ns.db.settings.strangerThreshold = 4
     for i = 1, 3 do hear(flagMsg(0), "CHANNEL", ("Alt%s-Faerlina"):format(string.char(96 + i))) end
@@ -1052,7 +1062,6 @@ test("a forged report in your name gets withdrawn", function()
     eq(x[1].chatType, "GUILD", "where the forgery showed up")
     eq(ns.Status("badlead-whitemane").cPlayer, 0, "not stored")
     ok(ns.db.retracted[ns.RecordId("P", "badlead-whitemane", "mylock-whitemane")], "kept so syncs carry it")
-    -- but a real flag of yours is left alone
     ns.NoteGrouped("realone-whitemane")
     ns.FlagPlayer("realone-whitemane", { name = "Realone-Whitemane", kind = "kick", source = "you" }, true)
     M.Advance(10)

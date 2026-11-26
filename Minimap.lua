@@ -1,14 +1,11 @@
--- minimap button and the retail addon compartment entry.
--- left click opens the list, right click opens options
 local _, ns = ...
 
 local ICON = "Interface\\Icons\\Spell_Shadow_Twilight"
-local EDGE = 5 -- px outside the minimap edge
+local EDGE = 5
 local RETAIL = WOW_PROJECT_ID ~= nil and WOW_PROJECT_ID == WOW_PROJECT_MAINLINE
 
 local button
 
--- used by both the minimap button and the compartment
 function ns.FillTooltip(tt, draggable)
     tt:AddLine(ns.TITLE)
     local others = { players = 0, guilds = 0 }
@@ -35,12 +32,10 @@ local function onClick(mouseButton)
     if mouseButton == "RightButton" then ns.OpenOptions() else ns.ToggleWindow() end
 end
 
--- minimap button
 local function position()
     local angle = math.rad(ns.db.settings.minimapAngle or 225)
     local x, y = math.cos(angle), math.sin(angle)
     if GetMinimapShape and GetMinimapShape() == "SQUARE" then
-        -- square minimaps: push it out to the edge
         local d = math.max(math.abs(x), math.abs(y))
         x, y = x / d, y / d
     end
@@ -55,7 +50,6 @@ local function followCursor()
     local px, py = GetCursorPosition()
     local scale = Minimap:GetEffectiveScale()
     px, py = px / scale, py / scale
-    -- set directly, SetSetting would refresh the UI every frame while dragging
     ns.db.settings.minimapAngle = math.floor(math.deg(math.atan2(py - my, px - mx)) % 360 + 0.5)
     position()
 end
@@ -69,7 +63,6 @@ local function create()
     button:RegisterForDrag("LeftButton")
     button:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
 
-    -- standard minimap button border so it matches everyone else's
     local overlay = button:CreateTexture(nil, "OVERLAY")
     overlay:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
     overlay:SetPoint("TOPLEFT")
@@ -126,9 +119,6 @@ ns.Listen("SETTING_CHANGED", function(field)
     if field == "showMinimap" then ns.UpdateMinimapButton() end
 end)
 
--- addon compartment (Retail)
--- hooked up in the TOC (AddonCompartmentFunc), ignored on clients without it.
--- newer clients pass a table instead of the button name
 function SummonersUnion_OnAddonCompartmentClick(_, mouseButton)
     if type(mouseButton) == "table" then mouseButton = mouseButton.buttonName end
     onClick(mouseButton)
@@ -145,5 +135,4 @@ function SummonersUnion_OnAddonCompartmentLeave()
     GameTooltip:Hide()
 end
 
--- used by the tests
 function ns.MinimapButton() return button end

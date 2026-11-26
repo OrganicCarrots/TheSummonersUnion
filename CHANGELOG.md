@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.0-beta2.4
+
+- Anyone sending more than 60 addon messages a minute gets ignored automatically (the addon
+  itself never sends more than 50). Every player's addon checks this on its own end, so a
+  modified copy can't get around it. `/su trust <name>` undoes it
+
 ## v1.0.0-beta2.3
 
 - WoW Forever fixes. It has no realms, which the addon wasn't expecting:

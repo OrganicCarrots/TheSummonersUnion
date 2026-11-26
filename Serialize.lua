@@ -1,4 +1,3 @@
--- export/import as plain text. no game API in here so the tests cover all of it
 local _, ns = ...
 
 local HEADER = "SummonersUnion:1"
@@ -6,7 +5,6 @@ local SEP = "~"
 
 local function clean(s) return (tostring(s or ""):gsub("[~|\r\n]", " ")) end
 
--- adler-32 style checksum, stays exact with lua 5.1 numbers
 local function checksum(s)
     local a, b = 1, 0
     for i = 1, #s do
@@ -36,7 +34,6 @@ end
 
 local function field(v) if v ~= nil and v ~= "" then return v end end
 
--- returns a list of { kind = "P"|"G", key, rec }, or nil + reason
 function ns.ParseExport(text)
     text = tostring(text or ""):gsub("\r", "")
     local header, body, sum = text:match("^%s*(SummonersUnion:%d+)\n(.*)\n#(%x+)%s*$")
@@ -49,7 +46,6 @@ function ns.ParseExport(text)
             local f = {}
             for v in (ln .. SEP):gmatch("(.-)" .. SEP) do f[#f + 1] = v end
             local kind, key = f[1], (f[2] or ""):lower()
-            -- the realm part can be empty, wow forever has no realms
             local valid = (kind == "P" and key:find("^[^%-]+%-[^%-]*$")) or (kind == "G" and key:find("^.+@.*$"))
             if valid then
                 out[#out + 1] = { kind = kind, key = key, rec = {

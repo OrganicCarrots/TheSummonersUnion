@@ -1,4 +1,3 @@
--- core: saved vars, event dispatch, name helpers, settings and slash commands
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
@@ -8,54 +7,55 @@ ns.VERSION = (getMeta and getMeta(ADDON, "Version")) or "dev"
 
 ns.DEFAULTS = {
     schema = 1,
-    players = {},                              -- [name-realm] = your flag on a player
-    guilds = {},                               -- [guild@realm] = your flag on a guild
-    community = { players = {}, guilds = {} }, -- [key] = { [reporter] = report from another union member }
-    reporterCounts = {},                       -- [reporter] = reports stored from them (capped)
-    relayCounts = {},                          -- [relayer] = reports they passed on to us (capped)
-    distrust = {},                             -- [reporter] = true, or "auto" if they flooded us
-    retracted = {},                            -- ["P|key|reporter"] = day the flag was withdrawn
-    filed = {},                                -- ["reporter|day"] = new reports from them that day
-    seen = {},                                 -- [name-realm] = last time we were grouped with them
-    seenGuilds = {},                           -- [guild@realm] = last time we grouped with a member
+    players = {},
+    guilds = {},
+    community = { players = {}, guilds = {} },
+    reporterCounts = {},
+    relayCounts = {},
+    distrust = {},
+    retracted = {},
+    filed = {},
+    seen = {},
+    seenGuilds = {},
     settings = {
-        promptOnKick = true,        -- ask to flag when you are removed after summoning
-        promptOnDisband = true,     -- ...or when the group is disbanded after summoning
-        minSummons = 1,             -- summons you must have cast in that group
-        summonWindowMinutes = 20,   -- removal must come this soon after your last summon
+        promptOnKick = true,
+        promptOnDisband = true,
+        minSummons = 1,
+        summonWindowMinutes = 20,
         warnOnInvite = true,
         warnInGroup = true,
-        autoDecline = false,        -- decline invites from flagged players outright
-        communityThreshold = 2,     -- people you know who must report someone before you're warned
-        strangerThreshold = 4,      -- ...or this many people in all, counting ones you don't know
-        countStrangers = true,      -- off: only people you know can get someone flagged for you
-        trustGuildmates = true,     -- one report from a guildmate is enough
+        autoDecline = false,
+        communityThreshold = 2,
+        strangerThreshold = 4,
+        countStrangers = true,
+        trustGuildmates = true,
         shareGuild = true,
         shareGroup = true,
-        shareChannel = false,       -- opt-in public channel shared by all union members
-        acceptRelays = true,        -- count reports other members pass on, not just first hand ones
-        forwardReports = true,      -- pass new reports on to your other channels as soon as you get them
+        shareChannel = false,
+        acceptRelays = true,
+        forwardReports = true,
         channelName = "SummonersUnion",
-        channelSuggested = false,   -- we've asked once whether to join the channel
-        communityExpiryDays = 180,  -- other members' reports stop counting after this (0 = never)
-        flagExpiryDays = 0,         -- forget your own flags after this, at login (0 = never)
+        channelSuggested = false,
+        communityExpiryDays = 180,
+        flagExpiryDays = 0,
         showMinimap = true,
-        showReasons = true,         -- the reason you gave, next to your own flags in the list
-        minimapAngle = 225,         -- degrees around the minimap, 0 = east
+        showReasons = true,
+        minimapAngle = 225,
     },
 }
 
 ns.LIMITS = {
-    countCap = 5,          -- most grievances one person can add against one target
-    perReporter = 300,     -- reports kept from any one person
-    perRelayer = 500,      -- reports any one person can pass on to us
-    relaysPerTarget = 3,   -- reports about the same target one person can pass on
-    dailyReports = 10,     -- new reports one person can file in a day before we ignore them
-    groupedDays = 7,       -- your flag is only shared if you grouped with them this recently
-    seenDays = 30,         -- how long we remember who we grouped with
-    replyRecords = 120,    -- records sent when answering a query
-    forwardPerMinute = 30, -- reports we pass on per minute, the rest wait for the next sync
-    total = 5000,          -- community reports kept in all
+    countCap = 5,
+    perReporter = 300,
+    perRelayer = 500,
+    relaysPerTarget = 3,
+    dailyReports = 10,
+    groupedDays = 7,
+    seenDays = 30,
+    replyRecords = 120,
+    forwardPerMinute = 30,
+    floodPerMinute = 60,
+    total = 5000,
 }
 
 local function applyDefaults(dst, src)
@@ -71,7 +71,6 @@ local function applyDefaults(dst, src)
 end
 ns.ApplyDefaults = applyDefaults
 
--- internal callbacks: FLAGS_CHANGED, FLAG_ADDED, FLAG_REMOVED, SETTING_CHANGED
 local listeners = {}
 function ns.Listen(name, fn)
     listeners[name] = listeners[name] or {}
@@ -83,20 +82,16 @@ function ns.Fire(name, ...)
     for i = 1, #list do list[i](...) end
 end
 
--- game events
 local eventFrame = CreateFrame("Frame")
 local handlers = {}
 function ns.On(event, fn)
     if not handlers[event] then
         handlers[event] = {}
-        -- not every event exists on every client and registering an unknown one errors
         pcall(eventFrame.RegisterEvent, eventFrame, event)
     end
     table.insert(handlers[event], fn)
 end
 
--- retail 12 can give us "secret" values (names, chat text in some instances).
--- using them as strings errors so just treat them as unknown
 function ns.IsSecret(v) return issecretvalue ~= nil and v ~= nil and issecretvalue(v) or false end
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     local list = handlers[event]
@@ -127,7 +122,6 @@ ns.On("PLAYER_LOGIN", function()
     end
 end)
 
--- helpers
 function ns.Print(msg)
     local cf = DEFAULT_CHAT_FRAME
     if cf then cf:AddMessage("|cff9b6fd8Summoners Union|r: " .. tostring(msg)) end
@@ -154,11 +148,8 @@ local function normRealm(realm)
 end
 ns.NormRealm = normRealm
 
--- empty on wow forever, which has no realms
 function ns.HomeRealm() return normRealm(nil) end
 
--- "Name", "Name-Realm" or ("Name", "Realm") -> key "name-realm" plus display name "Name-Realm".
--- with no realm the key ends in "-" and the display name is just "Name"
 function ns.PlayerKey(name, realm)
     name = trim(name)
     if name == "" then return nil end
@@ -166,7 +157,6 @@ function ns.PlayerKey(name, realm)
     if n then
         name, realm = n, r
     elseif (not realm or realm == "") and normRealm(nil) == "" then
-        -- wow forever sends "First Last" in messages, unit names put the last name in the realm slot
         local first, last = name:match("^(%S+)%s+(.+)$")
         if first then name, realm = first, last end
     end
@@ -175,7 +165,6 @@ function ns.PlayerKey(name, realm)
     return (name .. "-" .. realm):lower(), realm == "" and name or (name .. "-" .. realm)
 end
 
--- "name-realm" key back to something readable, "Name-Realm"
 function ns.DisplayName(key)
     local n, r = tostring(key or ""):match("^([^%-]+)%-(.*)$")
     if not n then return key end
@@ -184,7 +173,6 @@ function ns.DisplayName(key)
     return n .. "-" .. (r:gsub("^%l", string.upper))
 end
 
--- guild names are unique per realm, key is "guild name@realm"
 function ns.GuildKey(guild, realm)
     guild = trim(guild)
     if guild == "" then return nil end
@@ -205,7 +193,7 @@ function ns.UnitGuild(unit)
     if ns.IsSecret(guild) or ns.IsSecret(guildRealm) then return nil end
     if not guild or guild == "" then return nil end
     if ns.HomeRealm() == "" then
-        guildRealm = nil -- wow forever has no realms, that slot holds the last name there
+        guildRealm = nil
     elseif not guildRealm or guildRealm == "" then
         local _, unitRealm = UnitName(unit)
         guildRealm = unitRealm
@@ -213,8 +201,6 @@ function ns.UnitGuild(unit)
     return ns.GuildKey(guild, guildRealm)
 end
 
--- older versions on wow forever put a member's last name in guild keys, so one guild had a
--- key per member, and names got a stray "-". fold those up
 function ns.FixRealmless(db)
     local function fold(k) return k and (k:gsub("@.*$", "@")) end
     local function rekey(store, merge)
@@ -247,7 +233,6 @@ function ns.FixRealmless(db)
         end
     end
 
-    -- message senders used to be keyed "first last-", unit names give "first-last"
     local function person(k)
         local first, last = k:match("^(%S+) (.+)%-$")
         return first and (first .. "-" .. last:gsub("[%s%-']", "")) or k
@@ -274,7 +259,6 @@ function ns.FixRealmless(db)
 end
 ns.OnReady(function() if ns.HomeRealm() == "" then ns.FixRealmless(ns.db) end end)
 
--- unit tokens for the whole group, including the player
 function ns.GroupUnits()
     local units = {}
     if IsInRaid() then
@@ -286,8 +270,6 @@ function ns.GroupUnits()
     return units
 end
 
--- settings
--- all changes go through SetSetting so /su set and the options panel behave the same
 local SETTINGS = {
     window = { "summonWindowMinutes", "number", 1, 240 },
     minsummons = { "minSummons", "number", 1, 40 },
@@ -318,14 +300,12 @@ function ns.SetSetting(field, value)
     ns.Fire("FLAGS_CHANGED")
 end
 
--- reset everything except the minimap button position
 function ns.ResetSettings()
     for field, value in pairs(ns.DEFAULTS.settings) do
         if field ~= "minimapAngle" and field ~= "channelSuggested" then ns.SetSetting(field, value) end
     end
 end
 
--- slash commands
 local HELP = {
     "/su - open the union list",
     "/su options - open the options panel",
@@ -352,7 +332,6 @@ ns.OnOff = onoff
 
 local function setCommand(rest)
     local opt, val = rest:lower():match("^(%S+)%s*(%S*)$")
-    -- /su set strangers on|off, a number still sets how many
     if opt == "strangers" and onoff(val) ~= nil then
         ns.SetSetting("countStrangers", onoff(val))
         ns.Print(ns.db.settings.countStrangers and "Reports from strangers count again."
@@ -432,7 +411,6 @@ function ns.Slash(msg)
         end
         ns.db.distrust[key] = (cmd == "distrust") or nil
         if cmd == "trust" then
-            -- start their daily count over, otherwise an old flood would trip it again
             for k in pairs(ns.db.filed) do
                 if k:sub(1, #key + 1) == key .. "|" then ns.db.filed[k] = nil end
             end

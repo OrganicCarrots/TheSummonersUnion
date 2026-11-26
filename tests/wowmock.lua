@@ -1,12 +1,8 @@
--- fake WoW API, just enough to load the addon in plain lua 5.1 and fire events at it.
--- widgets accept any method and do nothing
 local M = { clock = 1800000000, timers = {}, sent = {}, chat = {}, alerts = {}, popups = {}, declined = 0, tooltip = {} }
 
--- clock and timers
 function time() return M.clock end
 date = os.date
 function M.Advance(sec)
-    -- run timers in order so ones created along the way also fire
     local target = M.clock + sec
     while true do
         local nextT, idx
@@ -32,7 +28,6 @@ C_Timer = {
     end,
 }
 
--- widgets: unknown methods are no-ops that return the widget
 local frames = {}
 local widgetMeta = { __index = function(t, k) return function() return t end end }
 function CreateFrame(kind, name, parent, template)
@@ -72,7 +67,6 @@ Minimap.GetCenter = function() return 500, 400 end
 Minimap.GetEffectiveScale = function() return 1 end
 M.cursor = { 0, 0 }
 GetCursorPosition = function() return M.cursor[1], M.cursor[2] end
--- new style settings window (retail and current classic)
 Settings = {
     RegisterCanvasLayoutCategory = function(frame, name)
         M.category = { frame = frame, name = name, GetID = function() return 4242 end }
@@ -109,7 +103,6 @@ end
 C_AddOns = { GetAddOnMetadata = function() return "test" end }
 GetSpellInfo = function(id) if id == 698 then return "Ritual of Summoning" end return "Shadow Bolt" end
 
--- chat
 ERR_UNINVITE_YOU = "You have been removed from the group."
 ERR_GROUP_DISBANDED = "Your group has been disbanded."
 ERR_LEFT_GROUP_YOU = "You leave the group."
@@ -124,9 +117,8 @@ JoinChannelByName = function(name) M.channels[name] = 5 end
 LeaveChannelByName = function(name) M.channels[name] = nil; table.insert(M.leftChannels, name) end
 IsInGuild = function() return true end
 
--- the world: you are Mylock-Whitemane, a warlock in <The Union>
 M.realm = "Whitemane"
-M.units = {}      -- unit token -> { name, realm, guild, leader }
+M.units = {}
 M.inGroup, M.raid = false, false
 GetNormalizedRealmName = function() return M.realm end
 GetRealZoneText = function() return "Molten Core" end
@@ -163,7 +155,6 @@ function M.SetGroup(members)
     for i, m in ipairs(members) do M.units["party" .. i] = m end
 end
 
--- right-click menus (the Menu api). OpenMenu builds what the addon adds to one
 M.menus = {}
 Menu = { ModifyMenu = function(tag, fn) M.menus[tag] = M.menus[tag] or {}; table.insert(M.menus[tag], fn) end }
 function M.OpenMenu(tag, context)
@@ -180,7 +171,6 @@ function M.OpenMenu(tag, context)
 end
 
 function M.Reset()
-    -- keep timers, the send queue might still be waiting on one from the last test
     M.sent, M.chat, M.alerts, M.popups, M.declined, M.tooltip = {}, {}, {}, {}, 0, {}
     M.units = { player = { name = "Mylock", guild = "The Union" } }
     M.inGroup, M.raid, M.instance = false, false, false

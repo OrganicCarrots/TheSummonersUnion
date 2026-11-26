@@ -1,21 +1,12 @@
--- detect: spot the summon-then-kick pattern and offer to flag the leader
---
--- While you are in a group we keep a "session": who leads it, everyone's guild, and how
--- many Ritual of Summoning casts you finished in it. When the session ends, we decide how:
---   * "You leave the group." or a LeaveParty() call -> you left. Nothing happens.
---   * "You have been removed from the group."      -> kicked.
---   * "Your group has been disbanded." or a silent drop -> disbanded.
--- If you were kicked or disbanded within the window after your last summon, you're asked
--- whether to flag the leader (and their guild). Nothing is flagged without that click.
 local _, ns = ...
 
-local RITUAL_IDS = { [698] = true } -- Ritual of Summoning
+local RITUAL_IDS = { [698] = true }
 local ritualName
-local session            -- the group you're in now
-local removal            -- what the last system message said happened
-local leftAt = 0         -- when you chose to leave
+local session
+local removal
+local leftAt = 0
 local pendingTargets = {}
-local EVAL_DELAY = 2     -- the system message and the roster event arrive in either order
+local EVAL_DELAY = 2
 
 local function spellName(id)
     if C_Spell and C_Spell.GetSpellName then return C_Spell.GetSpellName(id) end
@@ -55,8 +46,8 @@ local function evaluate()
     local s, kind = session, removal
     session, removal = nil, nil
     if not kind then
-        if time() - leftAt <= 10 then return end -- you left on your own
-        kind = "disband"                          -- dropped with no message: treat like a disband
+        if time() - leftAt <= 10 then return end
+        kind = "disband"
     end
     if kind == "left" then return end
     ns.ConsiderKick(s, kind)
@@ -70,7 +61,7 @@ function ns.ConsiderKick(s, kind)
     if kind == "disband" and not st.promptOnDisband then return end
     if (s.summons or 0) < st.minSummons then return end
     if time() - (s.lastSummon or 0) > st.summonWindowMinutes * 60 then return end
-    if not s.leader or s.leader == ns.playerKey then return end -- you led the group yourself
+    if not s.leader or s.leader == ns.playerKey then return end
     local leader = s.members[s.leader] or {}
     ns.ShowKickPrompt({
         key = s.leader, name = leader.name or s.leader, guildKey = leader.guildKey, guild = leader.guild,
@@ -78,7 +69,6 @@ function ns.ConsiderKick(s, kind)
     })
 end
 
--- group lifecycle
 ns.On("GROUP_JOINED", function()
     session, removal = newSession(), nil
     scanRoster()
@@ -108,10 +98,9 @@ local function markLeave() leftAt = time() end
 ns.OnReady(function()
     if type(LeaveParty) == "function" then hooksecurefunc("LeaveParty", markLeave) end
     if C_PartyInfo and type(C_PartyInfo.LeaveParty) == "function" then hooksecurefunc(C_PartyInfo, "LeaveParty", markLeave) end
-    if IsInGroup() then scanRoster() end -- logged in (or /reload) while grouped
+    if IsInGroup() then scanRoster() end
 end)
 
--- summons
 ns.On("UNIT_SPELLCAST_SENT", function(unit, target, castGUID, spellID)
     if unit ~= "player" or not ns.isWarlock or not castGUID then return end
     if isRitual(spellID) then pendingTargets[castGUID] = target end
@@ -128,5 +117,4 @@ ns.On("UNIT_SPELLCAST_SUCCEEDED", function(unit, castGUID, spellID)
     if t and t ~= "" then table.insert(session.targets, t) end
 end)
 
--- used by the tests
 function ns.CurrentSession() return session end

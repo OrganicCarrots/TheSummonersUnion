@@ -1,4 +1,3 @@
--- tooltip: red line on flagged players
 local _, ns = ...
 
 local function addLines(tooltip, unit)

@@ -1,4 +1,3 @@
--- flags: your flags, community reports, warnings and the flag/unflag commands
 local _, ns = ...
 
 ns.REASONS = {
@@ -13,10 +12,10 @@ local function upsert(store, key, rec)
         old.times = (old.times or 1) + 1
         old.when = rec.when or time()
         old.summons = (old.summons or 0) + (rec.summons or 0)
-        for _, f in ipairs({ "name", "guild", "guildKey", "zone", "kind", "reason", "note", "source", "class" }) do
+        for _, f in ipairs({ "name", "guild", "guildKey", "zone", "kind", "reason", "note", "source", "class", "by" }) do
             if rec[f] ~= nil and rec[f] ~= "" then old[f] = rec[f] end
         end
-        old.private = (old.private and rec.private) or nil -- once shared, stays shared
+        old.private = (old.private and rec.private) or nil
         return old
     end
     rec.times = 1
@@ -25,7 +24,6 @@ local function upsert(store, key, rec)
     return rec
 end
 
--- who we've actually been in a group with, so flags can't be shared about random people
 function ns.NoteGrouped(key, guildKey)
     local now = time()
     if key then ns.db.seen[key] = now end
@@ -44,6 +42,7 @@ function ns.FlagPlayer(key, rec, quiet)
     if rec.source == "you" then
         rec.private = not ns.GroupedRecently(key) or nil
         rec.class = rec.class or ns.playerClass
+        rec.by = rec.by or ns.playerKey
     end
     local r = upsert(ns.db.players, key, rec)
     ns.Fire("FLAGS_CHANGED")
@@ -61,6 +60,7 @@ function ns.FlagGuild(key, rec, quiet)
     if rec.source == "you" then
         rec.private = not ns.GroupedRecently(key, true) or nil
         rec.class = rec.class or ns.playerClass
+        rec.by = rec.by or ns.playerKey
     end
     local r = upsert(ns.db.guilds, key, rec)
     ns.Fire("FLAGS_CHANGED")
@@ -84,7 +84,6 @@ end
 function ns.UnflagPlayer(key) return unflag(ns.db.players, "P", key) end
 function ns.UnflagGuild(key) return unflag(ns.db.guilds, "G", key) end
 
--- reports older than communityExpiryDays don't count (0 = never expire)
 function ns.ReportExpired(day)
     local days = ns.db.settings.communityExpiryDays or 0
     return days > 0 and (tonumber(day) or 0) < ns.Today() - days
@@ -97,12 +96,6 @@ function ns.ReportUsable(reporter, r)
     return true
 end
 
--- returns: members who reported it, whether that's enough to warn, newest report,
--- total grievances, and how many of the reports were relayed.
--- the threshold counts sources, not reports. everything one person passes on counts as
--- them, whoever it claims to be from, so making up or borrowing names doesn't help.
--- nobody can check who really grouped with whom, so strangers need more sources: a
--- source you know came through your guild or group, or you've grouped with them lately
 local KNOWN_CHANNELS = { GUILD = true, PARTY = true, RAID = true, INSTANCE_CHAT = true }
 
 function ns.Community(bucket, key)
@@ -140,7 +133,6 @@ function ns.Status(playerKey, guildKey)
         s.player = ns.db.players[playerKey]
         s.cPlayer, s.cPlayerShown, s.cPlayerLatest, s.cPlayerTotal, s.cPlayerRelayed = ns.Community("players", playerKey)
         if not guildKey then
-            -- no guild info before you're grouped (invites), use the last one we saw
             guildKey = (s.player and s.player.guildKey) or (s.cPlayerLatest and s.cPlayerLatest.g) or nil
         end
     end
@@ -161,7 +153,6 @@ function ns.ClassName(token)
     return tostring(name or "?"):lower()
 end
 
--- who's behind the reports on someone, "2 warlocks, 1 priest", warlocks first
 function ns.ReporterClasses(bucket, key)
     local counts, order = {}, {}
     for reporter, r in pairs(key and ns.db.community[bucket][key] or {}) do
@@ -181,7 +172,6 @@ function ns.ReporterClasses(bucket, key)
     return table.concat(parts, ", ")
 end
 
--- "flagged 6 times by 4 union members, including you"
 local function tally(total, members, mine)
     local by = plural(members, "union member") .. (mine and ", including you" or "")
     if mine and members == 1 then by = "you" end
@@ -222,7 +212,6 @@ function ns.Alert(msg)
     if PlaySound and SOUNDKIT and SOUNDKIT.RAID_WARNING then PlaySound(SOUNDKIT.RAID_WARNING) end
 end
 
--- warnings
 ns.On("PARTY_INVITE_REQUEST", function(inviter)
     if not ns.db.settings.warnOnInvite or not inviter or ns.IsSecret(inviter) then return end
     local key, display = ns.PlayerKey(inviter)
@@ -262,10 +251,6 @@ end
 ns.On("GROUP_ROSTER_UPDATE", scanGroup)
 ns.OnReady(scanGroup)
 
--- aging
--- clears out expired reports, and your own old flags if flagExpiryDays is set.
--- only runs at login so changing the setting never deletes anything mid-session.
--- forgotten flags aren't retracted, other people's copies expire on their own
 function ns.Prune()
     local db = ns.db
     local reportsRemoved, flagsRemoved = 0, 0
@@ -284,7 +269,6 @@ function ns.Prune()
             if next(reports) == nil then all[key] = nil end
         end
     end
-    -- over the total cap: drop relayed reports first, oldest first
     if #kept > ns.LIMITS.total then
         table.sort(kept, function(a, b)
             if (a[4].rl ~= nil) ~= (b[4].rl ~= nil) then return a[4].rl ~= nil end
@@ -297,7 +281,6 @@ function ns.Prune()
             reportsRemoved = reportsRemoved + 1
         end
     end
-    -- recount from scratch so the caps can't drift
     local counts, relays = {}, {}
     for _, k in ipairs(kept) do
         counts[k[3]] = (counts[k[3]] or 0) + 1
@@ -340,9 +323,6 @@ function ns.Prune()
 end
 ns.OnReady(ns.Prune)
 
--- commands
--- "/su flag Name-Realm some reason" or a bare "/su flag" for your target.
--- two part names are typed First-Last, same as they come from the target
 local function resolvePlayer(rest)
     local name, reason = ns.Trim(rest):match("^(%S+)%s*(.-)$")
     if name then
@@ -375,7 +355,6 @@ local function resolveGuild(rest)
     if UnitExists("target") then return ns.UnitGuild("target") end
 end
 
--- also used by the right-click menu
 function ns.FlagByHand(key, display, gk, gn, reason)
     return ns.FlagPlayer(key, {
         name = display, guildKey = gk, guild = gn, kind = "manual", summons = 0, source = "you",
@@ -387,8 +366,6 @@ function ns.FlagGuildByHand(gk, gn)
     return ns.FlagGuild(gk, { name = gn, kind = "manual", summons = 0, source = "you" })
 end
 
--- a guild typed without a realm still finds the flag if it's on another realm (targets can
--- be from connected realms). nil plus true if it's on more than one, they need to say which
 local function guildOnAnyRealm(key)
     local store = ns.db.guilds
     if store[key] then return key end
@@ -484,7 +461,6 @@ function ns.SlashList()
     if #list > 15 then ns.Print("  ...open /su for the full list.") end
 end
 
--- imported flags are stored like yours (source "import") but never re-broadcast
 function ns.ImportText(text)
     local list, err = ns.ParseExport(text)
     if not list then return false, err end

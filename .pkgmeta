@@ -1,4 +1,3 @@
-# BigWigs packager config, used by the release workflow
 package-as: TheSummonersUnion
 
 manual-changelog:

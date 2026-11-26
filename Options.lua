@@ -1,4 +1,3 @@
--- options panel (Options > AddOns). plain frames so the same code works on classic and retail
 local _, ns = ...
 
 local COL_W = 280
@@ -28,7 +27,6 @@ local function checkbox(x, y, field, label, tip)
     local cb = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
     cb:SetSize(24, 24)
     cb:SetPoint("TOPLEFT", x, y)
-    -- own label, the template's text region is named differently between clients
     cb.label = cb:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     cb.label:SetPoint("LEFT", cb, "RIGHT", 2, 1)
     cb.label:SetText(label)
@@ -39,8 +37,6 @@ local function checkbox(x, y, field, label, tip)
     return cb
 end
 
--- label with -/+ buttons that step through a list of values.
--- zeroIsNever: 0 means never and sorts last
 local function stepper(x, y, field, label, values, format, tip, zeroIsNever)
     local function rank(v)
         if zeroIsNever and v == 0 then return math.huge end
@@ -66,7 +62,6 @@ local function stepper(x, y, field, label, values, format, tip, zeroIsNever)
     f.minus:SetPoint("RIGHT", f.value, "LEFT", -4, 0)
     f.minus:SetText("-")
 
-    -- step from the current value so custom values from /su set still work
     function f.Step(dir)
         local cur = rank(ns.db.settings[field] or 0)
         local pick
@@ -151,7 +146,6 @@ local function build()
     sub:SetJustifyH("LEFT")
     sub:SetText(("Version %s. Changes apply right away. Hover over an option for details; /su help lists the commands."):format(ns.VERSION))
 
-    -- left column
     header(LEFT_X, -70, "Summon-kick detection (warlocks)")
     checkbox(LEFT_X, -90, "promptOnKick", "Ask to flag after a summon-kick",
         "If you're removed from a group soon after summoning for it, ask whether to flag the leader. Nothing is flagged unless you click.")
@@ -176,7 +170,6 @@ local function build()
     checkbox(LEFT_X, -372, "showReasons", "Show your reasons in the list",
         "Show the reason you gave (or who you summoned) next to your own flags in the list. Hover over a row to read it in full.")
 
-    -- right column
     header(RIGHT_X, -70, "Sharing")
     checkbox(RIGHT_X, -90, "shareGuild", "Share your flags with your guild",
         "Send your new flags to guildmates who run the addon, and answer their requests for recent flags. Uses hidden addon messages, never chat.")
@@ -205,7 +198,6 @@ local function build()
     stepper(RIGHT_X, -420, "flagExpiryDays", "Forget your flags after", { 90, 180, 365, 730, 0 }, days,
         "Forget your own (and imported) flags once they're this old. Checked when you log in or /reload, so you can change your mind first.", true)
 
-    -- not every client shows the settings window's own defaults button
     panel.resetButton = button("Reset to defaults", 130, function() StaticPopup_Show("SUMMONERSUNION_RESET") end)
     panel.resetButton:SetPoint("TOPLEFT", LEFT_X, -406)
     panel.purgeButton = button("Clear community reports", 170, function() StaticPopup_Show("SUMMONERSUNION_PURGE") end)
@@ -221,7 +213,6 @@ local function build()
     import:SetPoint("LEFT", export, "RIGHT", 6, 0)
 
     panel:SetScript("OnShow", refresh)
-    -- settings apply right away so commit/cancel do nothing, defaults resets ours
     panel.OnCommit = function() end
     panel.OnDefault = function() ns.ResetSettings() end
     panel.OnRefresh = refresh
@@ -245,7 +236,6 @@ function ns.OpenOptions()
     if category and Settings and Settings.OpenToCategory then
         Settings.OpenToCategory(category.GetID and category:GetID() or category.ID)
     elseif InterfaceOptionsFrame_OpenToCategory then
-        -- old clients need two calls to actually land on the page
         InterfaceOptionsFrame_OpenToCategory(panel)
         InterfaceOptionsFrame_OpenToCategory(panel)
     end
@@ -253,5 +243,4 @@ end
 
 ns.OnReady(function() if not panel then build() end end)
 
--- used by the tests
 function ns.OptionControls() return controls, panel, category end

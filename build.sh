@@ -1,7 +1,4 @@
 #!/bin/sh
-# builds dist/TheSummonersUnion-<version>.zip for installing by hand
-#   ./build.sh          version from the latest tag (or "dev")
-#   ./build.sh 1.0.0    explicit version
 set -e
 cd "$(dirname "$0")"
 repo=$(pwd)

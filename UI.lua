@@ -1,7 +1,5 @@
--- ui: kick prompt, list window, export/import box
 local _, ns = ...
 
--- prompt
 local function flagFromPrompt(d, withGuild)
     if d.test then
         ns.Print("That was a preview; nothing was flagged.")
@@ -16,7 +14,6 @@ local function flagFromPrompt(d, withGuild)
     end
 end
 
--- one time suggestion to join the union channel, it stays opt-in
 StaticPopupDialogs["SUMMONERSUNION_CHANNEL"] = {
     text = "The Summoners Union works best when you join the union channel: reports then reach every union member on your realm, not just your guild and groups.\n\nIt's a hidden channel, nothing shows in your chat. Join it now? You can change this any time in the options.",
     button1 = "Join channel",
@@ -63,7 +60,6 @@ function ns.ShowKickPrompt(d)
     StaticPopup_Show("SUMMONERSUNION_KICKED", text, nil, d)
 end
 
--- list window
 local ROWS, ROW_H = 14, 20
 local frame, rows, tabButtons, tab, items, offset = nil, {}, {}, "all", {}, 0
 
@@ -152,7 +148,7 @@ local function makeMovable(f, globalName)
     f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart", f.StartMoving)
     f:SetScript("OnDragStop", f.StopMovingOrSizing)
-    tinsert(UISpecialFrames, globalName) -- close with Escape
+    tinsert(UISpecialFrames, globalName)
 end
 
 local function build()
@@ -212,7 +208,6 @@ local function build()
             if not it then return end
             if it.list == "players" then ns.UnflagPlayer(it.key) elseif it.list == "guilds" then ns.UnflagGuild(it.key) end
         end)
-        -- long reasons get cut off in the row, the full text is on hover
         row:EnableMouse(true)
         row:SetScript("OnEnter", function(self)
             local why = self.item and self.item.rec and (self.item.rec.reason or self.item.rec.note)
@@ -231,7 +226,7 @@ local function build()
     button(frame, "Import", 80, function() ns.ShowImport() end):SetPoint("BOTTOMRIGHT", -14, 12)
     button(frame, "Export", 80, function() ns.ShowExport() end):SetPoint("BOTTOMRIGHT", -98, 12)
     button(frame, "Options", 80, function()
-        frame:Hide() -- otherwise it covers the settings window
+        frame:Hide()
         ns.OpenOptions()
     end):SetPoint("BOTTOMRIGHT", -182, 12)
 
@@ -243,10 +238,8 @@ function ns.ToggleWindow()
     if frame:IsShown() then frame:Hide() else frame:Show() end
 end
 
--- used by the tests
 function ns.ListWindow() return frame, rows, tabButtons end
 
--- export / import box
 local box
 
 local function buildBox()
@@ -263,7 +256,6 @@ local function buildBox()
     box.help:SetWidth(488)
     box.help:SetJustifyH("LEFT")
 
-    -- bordered so it's clear where the text goes, and a click anywhere in it puts the cursor in the box
     local area = CreateFrame("Frame", nil, box, BackdropTemplateMixin and "BackdropTemplate" or nil)
     area:SetPoint("TOPLEFT", 12, -62)
     area:SetPoint("BOTTOMRIGHT", -12, 42)

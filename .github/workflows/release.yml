@@ -1,6 +1,3 @@
-# push a v* tag to test, package and upload to CurseForge
-# needs the CF_API_KEY secret and X-Curse-Project-ID in the TOC
-# tags with alpha/beta in the name go up as alpha/beta files
 name: Release
 
 on:
@@ -20,12 +17,12 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # lets the packager attach the zip to a GitHub release too
+      contents: write
     env:
       CF_API_KEY: ${{ secrets.CF_API_KEY }}
       GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # the packager builds the changelog and version from git history
+          fetch-depth: 0
       - uses: BigWigsMods/packager@v2

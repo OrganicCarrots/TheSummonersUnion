@@ -1,20 +1,3 @@
--- comm: share flags with other users over addon messages (never visible chat)
---
--- live messages, sent as they happen:
---   1~F~P~Name-Realm~Guild@Realm~summons~day~reason~count~class   sender flagged a player
---   1~F~G~Guild@Realm~~summons~day~reason~count~class              sender flagged a guild
---   1~X~P|G~Name-Realm|Guild@Realm~day                       sender withdrew their flag
---   1~Q~sinceDay                                             send me what you have since then
---
--- answers to Q pack several records into one message, separated by ^
---   1~B~record^record^...
--- records are F and X as above (without the leading 1~) plus relayed ones:
---   R~P|G~who~guild~summons~day~reason~count~reporter~class  someone else's flag, passed on
---   Y~P|G~who~reporter~day                                   someone else's retraction, passed on
---
--- one entry per reporter per key so nobody can stack votes. relayed entries remember who
--- passed them on, and nobody can fill more than a set number of slots either way.
--- count and class are optional (older versions don't send them), a flag without a count counts once
 local _, ns = ...
 
 local PREFIX = "SUMUNION"
@@ -60,7 +43,6 @@ local function who(kind, key, name)
     return clean((name or g or "") .. "@" .. (realm or ""), 64)
 end
 
--- your own flag, as a record without the 1~ in front
 local function ownRecord(kind, key, rec)
     return table.concat({
         "F", kind, who(kind, key, rec.name), kind == "P" and guildField(rec.guildKey, rec.guild) or "",
@@ -135,7 +117,6 @@ local function decodeRecord(f)
     return m
 end
 
--- every record in a message (batches hold several), or nil if it isn't ours
 function ns.DecodeMessages(text)
     text = text or ""
     if text:sub(1, #PROTO + 1) ~= PROTO .. SEP then return nil end
@@ -156,7 +137,6 @@ function ns.DecodeMessage(text)
     return list and list[1]
 end
 
--- throttled queue, the server drops addon messages sent in bursts
 local queue, ticker = {}, nil
 local function pump()
     local item = table.remove(queue, 1)
@@ -179,7 +159,6 @@ local function channelId()
     if id and id > 0 then return id end
 end
 
--- LFG/LFR/BG groups only get INSTANCE_CHAT, PARTY and RAID messages are dropped there
 function ns.GroupChannel()
     if LE_PARTY_CATEGORY_INSTANCE and IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then return "INSTANCE_CHAT" end
     return IsInRaid() and "RAID" or "PARTY"
@@ -207,7 +186,6 @@ local function broadcast(text)
     for _, s in ipairs(scopes()) do ns.Send(text, s[1], s[2]) end
 end
 
--- private flags (you hadn't grouped with them) never leave your client
 ns.Listen("FLAG_ADDED", function(kind, key, rec)
     if rec.private then return end
     ns.db.retracted[ns.RecordId(kind, key, ns.playerKey)] = nil
@@ -215,11 +193,10 @@ ns.Listen("FLAG_ADDED", function(kind, key, rec)
 end)
 ns.Listen("FLAG_REMOVED", function(kind, key, rec)
     if rec.private then return end
-    ns.db.retracted[ns.RecordId(kind, key, ns.playerKey)] = ns.Today() -- so we keep passing the retraction on
+    ns.db.retracted[ns.RecordId(kind, key, ns.playerKey)] = ns.Today()
     broadcast(ns.EncodeRetract(kind, key, rec))
 end)
 
--- receiving
 local function dropReport(bucket, key, reporter)
     local db = ns.db
     local all = db.community[bucket]
@@ -232,7 +209,6 @@ local function dropReport(bucket, key, reporter)
     return true
 end
 
--- someone filing a pile of new reports in one day is spamming, ignore them until you /su trust them
 local function flooded(reporter, day)
     local db = ns.db
     local k = reporter .. "|" .. day
@@ -247,13 +223,11 @@ local function flooded(reporter, day)
     return true
 end
 
--- channel is where it arrived, kept so /su purge channel can find it
 local function putReport(bucket, m, reporter, via, relayer, channel)
     local db, limits = ns.db, ns.LIMITS
     local all = db.community[bucket]
     local old = all[m.key] and all[m.key][reporter]
     local newRelayer = relayer and (not old or old.rl ~= relayer)
-    -- check the caps before touching anything
     if not old and (db.reporterCounts[reporter] or 0) >= limits.perReporter then return false end
     if newRelayer then
         if (db.relayCounts[relayer] or 0) >= limits.perRelayer then return false end
@@ -264,8 +238,8 @@ local function putReport(bucket, m, reporter, via, relayer, channel)
         if here >= limits.relaysPerTarget then return false end
     end
     if old and not relayer and not old.rl and old.d == m.day and (old.c or 1) == (m.count or 1) then
-        if via == "GUILD" then old.via = via end -- same report, but now we know it came from the guild
-        return false -- nothing new, so nothing to pass on
+        if via == "GUILD" then old.via = via end
+        return false
     end
     if not old and flooded(reporter, m.day) then return false end
     if not old then db.reporterCounts[reporter] = (db.reporterCounts[reporter] or 0) + 1 end
@@ -277,13 +251,11 @@ local function putReport(bucket, m, reporter, via, relayer, channel)
     return true
 end
 
--- returns true if anything changed
 local function handle(sender, via, m)
     local db = ns.db
     local bucket = bucketOf(m.kind)
     local reporter = m.reporter or sender
     if reporter == sender then
-        -- straight from the person who filed it, this always wins over anything relayed
         local id = ns.RecordId(m.kind, m.key, sender)
         if m.type == "F" or m.type == "R" then
             if ns.ReportExpired(m.day) then return false end
@@ -297,7 +269,7 @@ local function handle(sender, via, m)
     if not db.settings.acceptRelays or reporter == ns.playerKey or db.distrust[reporter] then return false end
     local id = ns.RecordId(m.kind, m.key, reporter)
     local existing = db.community[bucket][m.key] and db.community[bucket][m.key][reporter]
-    if existing and not existing.rl then return false end -- we heard this one first hand
+    if existing and not existing.rl then return false end
     if m.type == "R" then
         if ns.ReportExpired(m.day) or (db.retracted[id] or -1) >= m.day then return false end
         if existing and ((existing.d or 0) > m.day or ((existing.d or 0) == m.day and (existing.c or 1) >= m.count)) then
@@ -305,14 +277,11 @@ local function handle(sender, via, m)
         end
         return putReport(bucket, m, reporter, "RELAY", sender, via)
     end
-    -- a passed-on withdrawal only counts from whoever passed that report to us,
-    -- otherwise anyone could quietly delete other people's reports
     if not existing or existing.rl ~= sender then return false end
     if (db.retracted[id] or -1) < m.day then db.retracted[id] = m.day end
     return dropReport(bucket, m.key, reporter)
 end
 
--- throw away other people's reports. your own flags are never touched
 function ns.Purge(what, hours)
     local db, n = ns.db, 0
     local cutoff = time() - (hours or 0) * 3600
@@ -331,7 +300,6 @@ function ns.Purge(what, hours)
         end
     end
     if what == "all" then
-        -- other people's withdrawals too, in case some were fake
         for id in pairs(db.retracted) do
             if id:match("^%a|.-|(.+)$") ~= ns.playerKey then db.retracted[id] = nil end
         end
@@ -350,7 +318,6 @@ function ns.SlashPurge(rest)
     ns.Print(("Cleared %d report(s) from other people. Your own flags are untouched."):format(ns.Purge(what, hours)))
 end
 
--- everything we know since a day, newest first, as records ready to pack
 local function syncRecords(since, skip, querier)
     local db, me, items = ns.db, ns.playerKey, {}
     local function add(day, rec, id, reporter)
@@ -387,7 +354,6 @@ local function syncRecords(since, skip, querier)
     return out
 end
 
--- as few messages as possible, each under the 255 byte limit
 local function pack(records)
     local msgs, cur = {}, nil
     local head = PROTO .. SEP .. "B" .. SEP
@@ -406,17 +372,28 @@ end
 
 function ns.SyncMessages(since, skip, querier) return pack(syncRecords(since or 0, skip or {}, querier)) end
 
--- while we wait to answer a query, remember what others already sent so we don't repeat it
 local pending, lastReply = {}, {}
 local function slotOf(chatType, target) return chatType .. tostring(target or "") end
 
--- passing reports on as soon as we hear them, so they reach everyone online within seconds.
--- each one goes out once, after a short random wait, and not to a channel where someone
--- else already sent it. past the per minute cap the rest waits for the next sync
 local outbox, flushing, forwarded, windowStart, denied = {}, false, 0, 0, {}
 
-function ns.ResetSync() -- used by the tests
+local rate = {}
+local function tooMany(senderKey)
+    local now = time()
+    local r = rate[senderKey]
+    if not r or now - r.start >= 60 then
+        r = { start = now, n = 0 }
+        rate[senderKey] = r
+    end
+    r.n = r.n + 1
+    if r.n <= ns.LIMITS.floodPerMinute then return false end
+    rate[senderKey] = nil
+    return true
+end
+
+function ns.ResetSync()
     pending, lastReply, outbox, flushing, forwarded, windowStart, denied = {}, {}, {}, false, 0, 0, {}
+    rate = {}
 end
 
 local function flush()
@@ -457,7 +434,6 @@ local function forward(id, rec, arrivedOn)
     end
 end
 
--- what we now hold for a report, ready to pass on: the report, or its retraction
 local function currentRecord(kind, key, reporter)
     local db = ns.db
     local reports = db.community[bucketOf(kind)][key]
@@ -467,7 +443,6 @@ local function currentRecord(kind, key, reporter)
     return table.concat({ "Y", kind, who(kind, key, nil), reporter, tostring(day) }, SEP)
 end
 
--- someone passing on a report in our name that we never made (or took back): withdraw it
 local function denyForgery(m, id, channel)
     if m.type ~= "R" then return end
     local own = (m.kind == "P" and ns.db.players or ns.db.guilds)[m.key]
@@ -492,7 +467,6 @@ local function onQuery(channel, sender, since)
     local slot = slotOf(channel, target)
     if pending[slot] or (lastReply[slot] and time() - lastReply[slot] < REPLY_COOLDOWN) then return end
     pending[slot] = { seen = {} }
-    -- random delay so the whole guild doesn't answer at once
     C_Timer.After(3 + math.random() * 12, function()
         local p = pending[slot]
         pending[slot] = nil
@@ -506,6 +480,14 @@ ns.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
     if prefix ~= PREFIX or not text or not sender or not ns.db then return end
     local senderKey = ns.PlayerKey(sender)
     if not senderKey or senderKey == ns.playerKey or ns.db.distrust[senderKey] then return end
+    if tooMany(senderKey) then
+        ns.db.distrust[senderKey] = "auto"
+        local display = ns.DisplayName(senderKey)
+        ns.Print(("Ignoring %s: they sent more than %d messages in a minute. /su trust %s counts them again."):format(
+            display, ns.LIMITS.floodPerMinute, display))
+        ns.Fire("FLAGS_CHANGED")
+        return
+    end
     local list = ns.DecodeMessages(text)
     if not list then return end
     local arrivedOn = slotOf(channel, channel == "CHANNEL" and channelId() or nil)
@@ -518,7 +500,7 @@ ns.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
             local reporter = m.reporter or senderKey
             local id = ns.RecordId(m.kind, m.key, reporter)
             if p then p.seen[id] = true end
-            if box then box.recs[id] = nil end -- someone beat us to it here
+            if box then box.recs[id] = nil end
             if reporter == ns.playerKey then
                 denyForgery(m, id, channel)
             elseif handle(senderKey, channel, m) then
@@ -530,7 +512,6 @@ ns.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
     if changed then ns.Fire("FLAGS_CHANGED") end
 end)
 
--- don't ask for anything older than we'd keep
 local function querySince(maxDays)
     local expiry = ns.db.settings.communityExpiryDays or 0
     if expiry > 0 and expiry < maxDays then maxDays = expiry end
@@ -559,7 +540,6 @@ ns.OnReady(function()
     end)
 end)
 
--- swap lists with whoever else in a new group runs the addon
 ns.On("GROUP_JOINED", function()
     C_Timer.After(8, function()
         if IsInGroup() and sharingOn("PARTY") then ns.Send(ns.EncodeQuery(querySince(180)), ns.GroupChannel()) end
