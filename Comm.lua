@@ -140,14 +140,16 @@ function ns.DecodeMessage(text)
 end
 
 local queue, priority, streams, ticker = {}, {}, {}, nil
-local function currentBatch(text)
+local function currentBatch(text, seen)
     local records = {}
     for rec in (text:sub(5) .. RSEP):gmatch("(.-)%^") do
         local m = decodeRecord(split(rec))
         if m then
             local own = (m.kind == "P" and ns.db.players or ns.db.guilds)[m.key]
             local id = ns.RecordId(m.kind, m.key, ns.playerKey)
-            if m.type == "R" or m.type == "Y"
+            local sent = ns.RecordId(m.kind, m.key, m.reporter or ns.playerKey)
+            if seen and seen[sent] then
+            elseif m.type == "R" or m.type == "Y"
                 or (m.type == "F" and own and own.source == "you" and not own.private and m.rev == own.rev)
                 or (m.type == "X" and ns.db.retracted[id] == m.day and ns.db.withdrawalRev[id] == m.rev) then
                 records[#records + 1] = rec
@@ -164,7 +166,7 @@ local function pump()
         if not stream.active() or not stream.messages[stream.next] then
             table.remove(streams, 1)
         else
-            local text = currentBatch(stream.messages[stream.next])
+            local text = currentBatch(stream.messages[stream.next], stream.seen)
             if text then item = { text = text, chatType = stream.channel, target = stream.target } end
             stream.next = stream.next + 1
         end
@@ -233,7 +235,7 @@ ns.Listen("FLAG_ADDED", function(kind, key, rec)
     if rec.private then return end
     local id = ns.RecordId(kind, key, ns.playerKey)
     rec.rev = nextRevision(math.max(rec.rev or 0, ns.db.withdrawalRev[id] or 0))
-    ns.db.retracted[id], ns.db.withdrawalRev[id] = nil, nil
+    ns.db.retracted[id], ns.db.withdrawalRev[id], ns.db.retractedBy[id] = nil, nil, nil
     broadcast(ns.EncodeFlag(kind, key, rec))
 end)
 ns.Listen("FLAG_REMOVED", function(kind, key, rec)
@@ -305,16 +307,17 @@ local function handle(sender, via, m)
     if reporter == sender then
         local id = ns.RecordId(m.kind, m.key, sender)
         local old = db.community[bucket][m.key] and db.community[bucket][m.key][sender]
-        local withdrawn = db.retracted[id]
-        local withdrawalRev = db.withdrawalRev[id]
+        local mine = db.retractedBy[id] == "self"
+        local withdrawn = mine and db.retracted[id]
+        local withdrawalRev = mine and db.withdrawalRev[id]
         if old and not old.rl and (m.day < old.d or (m.rev and old.rev and m.rev < old.rev)) then return false end
         if withdrawn and (m.day < withdrawn or (m.rev and withdrawalRev and m.rev <= withdrawalRev)) then return false end
         if m.type == "F" or m.type == "R" then
             if ns.ReportExpired(m.day) then return false end
-            db.retracted[id], db.withdrawalRev[id] = nil, nil
+            db.retracted[id], db.withdrawalRev[id], db.retractedBy[id] = nil, nil, nil
             return putReport(bucket, m, sender, via, nil, via)
         end
-        db.retracted[id], db.withdrawalRev[id] = m.day, m.rev
+        db.retracted[id], db.withdrawalRev[id], db.retractedBy[id] = m.day, m.rev, "self"
         return dropReport(bucket, m.key, sender)
     end
 
@@ -338,7 +341,8 @@ local function handle(sender, via, m)
     end
     if not existing or existing.rl ~= sender then return false end
     if existing.d > m.day or (existing.rev and m.rev and existing.rev > m.rev) then return false end
-    db.retracted[id], db.withdrawalRev[id] = m.day, m.rev
+    db.retracted[id], db.withdrawalRev[id] = math.min(m.day, ns.Today()), m.rev and math.min(m.rev, time())
+    db.retractedBy[id] = "relay"
     return dropReport(bucket, m.key, reporter)
 end
 
@@ -361,7 +365,7 @@ function ns.Purge(what, hours)
     end
     if what == "all" then
         for id in pairs(db.retracted) do
-            if id:match("^%a|.-|(.+)$") ~= ns.playerKey then db.retracted[id], db.withdrawalRev[id] = nil, nil end
+            if id:match("^%a|.-|(.+)$") ~= ns.playerKey then db.retracted[id], db.withdrawalRev[id], db.retractedBy[id] = nil, nil, nil end
         end
     end
     ns.Fire("FLAGS_CHANGED")
@@ -381,7 +385,7 @@ end
 local function syncRecords(since, skip, querier, full)
     local db, me, items = ns.db, ns.playerKey, {}
     local function add(day, rec, id, reporter)
-        if (day or 0) >= since and not skip[id] and reporter ~= querier then items[#items + 1] = { day or 0, rec, id } end
+        if (day or 0) >= since and not skip[id] and reporter ~= querier then items[#items + 1] = { day or 0, rec, id, reporter == me } end
     end
     for _, kind in ipairs({ "P", "G" }) do
         for key, rec in pairs(kind == "P" and db.players or db.guilds) do
@@ -409,11 +413,12 @@ local function syncRecords(since, skip, querier, full)
         end
     end
     table.sort(items, function(a, b)
+        if full and a[4] ~= b[4] then return a[4] end
         if a[1] == b[1] then return a[3] < b[3] end
         return a[1] > b[1]
     end)
     local out = {}
-    for i = 1, (full and #items or math.min(#items, ns.LIMITS.replyRecords)) do out[i] = items[i][2] end
+    for i = 1, math.min(#items, full and ns.LIMITS.fullReplyRecords or ns.LIMITS.replyRecords) do out[i] = items[i][2] end
     return out
 end
 
@@ -550,7 +555,7 @@ local function onQuery(channel, sender, since, full)
         lastReply[slot] = time()
         local messages = ns.SyncMessages(since, request.seen, sender, full)
         if #messages == 0 then return end
-        streams[#streams + 1] = { slot = slot, messages = messages, next = 1, active = active, channel = channel, target = target }
+        streams[#streams + 1] = { slot = slot, messages = messages, seen = request.seen, next = 1, active = active, channel = channel, target = target }
         startPump()
     end)
 end
@@ -580,6 +585,9 @@ ns.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
             local reporter = m.reporter or senderKey
             local id = ns.RecordId(m.kind, m.key, reporter)
             if p then p.seen[id] = true end
+            for _, s in ipairs(streams) do
+                if s.slot == arrivedOn then s.seen[id] = true end
+            end
             if box then box.recs[id] = nil end
             if reporter == ns.playerKey then
                 denyForgery(m, id, channel)

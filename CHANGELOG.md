@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.0-beta2.4.2
+
+- A passed-on withdrawal can't block someone's own flag anymore.
+- Catching up with everything is capped so busy channels don't flood.
+
 ## v1.0.0-beta2.4.1
 
 - Sync catches up on older reports even when there are more than 120.

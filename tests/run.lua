@@ -843,6 +843,45 @@ test("upgraded sync sends every same-day record while legacy sync stays capped",
     eq(ns.DecodeMessage(ns.EncodeQuery(0, true)).full, true, "full sync request")
 end)
 
+test("full replies never go past 400 records", function()
+    for i = 1, 450 do
+        ns.db.players["target" .. i .. "-mankrik"] = { source = "you", when = time(), kind = "kick" }
+    end
+    local total = 0
+    for _, text in ipairs(ns.SyncMessages(0, nil, nil, true)) do total = total + #ns.DecodeMessages(text) end
+    eq(total, 400, "capped")
+end)
+
+test("a passed-on withdrawal with a future day can't block the reporter's own flag", function()
+    local key, reporter = "badlead-whitemane", "ann-faerlina"
+    local id = ns.RecordId("P", key, reporter)
+    hear(relayMsg(reporter), "GUILD", "Relayer-Whitemane")
+    eq(ns.Status(key).cPlayer, 1, "relayed report stored")
+    hear(("1~Y~P~Badlead-Whitemane~Ann-Faerlina~%d~%d"):format(ns.Today() + 1, time() + 86000), "GUILD", "Relayer-Whitemane")
+    eq(ns.Status(key).cPlayer, 0, "withdrawal applied")
+    ok(ns.db.retracted[id] <= ns.Today(), "day clamped")
+    ok(ns.db.withdrawalRev[id] <= time(), "rev clamped")
+    hear(flagMsg(0), "GUILD", "Ann-Faerlina")
+    eq(ns.Status(key).cPlayer, 1, "their own flag went through")
+    eq(ns.db.retracted[id], nil, "marker cleared")
+end)
+
+test("a passed-on withdrawal from someone who didn't relay is ignored", function()
+    hear(relayMsg("ann-faerlina"), "GUILD", "Relayer-Whitemane")
+    hear(("1~Y~P~Badlead-Whitemane~Ann-Faerlina~%d~%d"):format(ns.Today(), time()), "GUILD", "Other-Whitemane")
+    eq(ns.Status("badlead-whitemane").cPlayer, 1, "still there")
+    eq(ns.db.retracted[ns.RecordId("P", "badlead-whitemane", "ann-faerlina")], nil, "no marker")
+end)
+
+test("the reporter's own withdrawal still blocks an older passed-on report", function()
+    local id = ns.RecordId("P", "badlead-whitemane", "ann-faerlina")
+    hear(flagMsg(0), "GUILD", "Ann-Faerlina")
+    hear(ns.EncodeRetract("P", "badlead-whitemane", nil, ns.Today(), time()), "GUILD", "Ann-Faerlina")
+    eq(ns.db.retractedBy[id], "self", "marked as theirs")
+    hear(relayMsg("ann-faerlina", 1), "GUILD", "Relayer-Whitemane")
+    eq(ns.Status("badlead-whitemane").cPlayer, 0, "not brought back")
+end)
+
 test("late direct flags and withdrawals do not undo newer edits", function()
     local sender = "Ann-Faerlina"
     local key = "target-mankrik"
