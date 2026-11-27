@@ -1164,5 +1164,18 @@ test("people already in the channel aren't asked", function()
     eq(#M.popups, 0, "not asked")
 end)
 
+
+test("protected units from the game are left alone instead of erroring", function()
+    local secret = setmetatable({}, { __tostring = function() return "<secret>" end })
+    local oldSecret, oldIsPlayer, oldExists = issecretvalue, UnitIsPlayer, UnitExists
+    issecretvalue = function(v) return v == secret end
+    UnitIsPlayer = function(u) if u == secret then error("Secret values are only allowed during untainted execution") end return oldIsPlayer(u) end
+    UnitExists = function(u) if u == secret then error("Secret values are only allowed during untainted execution") end return oldExists(u) end
+    local okKey, key = pcall(ns.UnitKey, secret)
+    issecretvalue, UnitIsPlayer, UnitExists = oldSecret, oldIsPlayer, oldExists
+    ok(okKey, "UnitKey didn't error")
+    eq(key, nil, "no key for a protected unit")
+end)
+
 print(("\n%d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

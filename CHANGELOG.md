@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.0-beta2.4.3
+
+- Fixed an error on Retail when hovering over some players or things in the world (bad argument to UnitIsPlayer).
+
 ## v1.0.0-beta2.4.2
 
 - A passed-on withdrawal can't block someone's own flag anymore.

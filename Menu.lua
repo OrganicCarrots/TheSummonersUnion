@@ -4,7 +4,7 @@ local MENUS = { "MENU_UNIT_PLAYER", "MENU_UNIT_PARTY", "MENU_UNIT_RAID_PLAYER", 
 
 local function who(context)
     local unit = context and context.unit
-    if unit and UnitExists(unit) then
+    if unit and not ns.IsSecret(unit) and UnitExists(unit) then
         if not UnitIsPlayer(unit) then return end
         local key, display = ns.UnitKey(unit)
         local gk, gn = ns.UnitGuild(unit)

@@ -183,7 +183,7 @@ function ns.GuildKey(guild, realm)
 end
 
 function ns.UnitKey(unit)
-    if not unit or not UnitExists(unit) or not UnitIsPlayer(unit) then return nil end
+    if not unit or ns.IsSecret(unit) or not UnitExists(unit) or not UnitIsPlayer(unit) then return nil end
     local name, realm = UnitName(unit)
     if ns.IsSecret(name) or ns.IsSecret(realm) then return nil end
     if not name or name == "" or name == UNKNOWNOBJECT then return nil end

@@ -1,7 +1,7 @@
 local _, ns = ...
 
 local function addLines(tooltip, unit)
-    if not ns.db or not unit or not UnitIsPlayer(unit) then return end
+    if not ns.db or not unit or ns.IsSecret(unit) or not UnitIsPlayer(unit) then return end
     local key = ns.UnitKey(unit)
     if not key or key == ns.playerKey then return end
     local s = ns.Status(key, ns.UnitGuild(unit))
